@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { parseToken } from '../context/AuthContext'
@@ -11,8 +11,12 @@ import {
   foods,
 } from '../mock'
 
-// mock 가상 자작 데이터 사용
-const TODAY = '2026-03-26'
+// 식단·운동 조회용 날짜 — mock 데이터가 있는 날짜로 고정
+// 백엔드 연결 후 실제 날짜로 교체 예정
+const MOCK_DATE = '2026-03-26'
+
+// 공복 체중 입력 기준 날짜 — 실제 오늘
+const TODAY = new Date().toISOString().split('T')[0]
 
 const MEAL_LABEL = {
   breakfast: '아침',
@@ -28,13 +32,16 @@ const MEAL_COLOR = {
   snack:     'bg-purple-100 text-purple-600',
 }
 
-// 그 뭐야 칼로리 소비량 원형으로 보여주는 그거
+// SVG 원형 진행 바
+// pct: 0~1 사이 비율, children: 원 중앙에 표시할 내용
 function RingProgress({ pct, size = 140, stroke = 12, color = '#3b82f6', children }) {
-  const r   = (size - stroke) / 2
-  const circ = 2 * Math.PI * r
+  const r      = (size - stroke) / 2
+  const circ   = 2 * Math.PI * r
+  // 달성률만큼 선을 채우고 나머지는 비움 (strokeDashoffset)
   const offset = circ * (1 - Math.min(pct, 1))
   return (
     <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+      {/* -rotate-90: SVG 기본 시작점(3시)을 12시로 돌림 */}
       <svg width={size} height={size} className="-rotate-90">
         <circle cx={size / 2} cy={size / 2} r={r}
           fill="none" stroke="#e5e7eb" strokeWidth={stroke} />
@@ -52,7 +59,7 @@ function RingProgress({ pct, size = 140, stroke = 12, color = '#3b82f6', childre
   )
 }
 
-// 식단: 영양소 그래프
+// 영양소 가로 진행 바 — 100% 초과 방지
 function MacroBar({ label, current, goal: g, color }) {
   const pct = Math.min((current / g) * 100, 100)
   return (
@@ -74,21 +81,59 @@ function MacroBar({ label, current, goal: g, color }) {
 export default function HomePage() {
   const { token, logout } = useAuth()
   const navigate = useNavigate()
+
+  // JWT 토큰에서 이름 추출, 없으면 mock user 이름으로 대체
   const payload  = parseToken(token)
   const userName = payload?.name ?? user.name
 
-  // 식단 추천
+  // ── 공복 체중 ───────────────────────────────────────────
+  // 오늘 날짜의 weightLog가 이미 있으면 초기값으로 사용, 없으면 null
+  const initialTodayWeight = weightLogs.find((w) => w.date === TODAY)?.weightKg ?? null
+  const [todayWeight,     setTodayWeight]     = useState(initialTodayWeight)
+  const [showWeightModal, setShowWeightModal] = useState(false)
+  const [weightInput,     setWeightInput]     = useState('')
+  const [weightError,     setWeightError]     = useState('')
+
+  // 어제 체중 — 전날 기록이 없으면 weightLogs 마지막 항목으로 대체
+  const yesterdayWeight = useMemo(() => {
+    const yesterday = new Date(TODAY)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yStr = yesterday.toISOString().split('T')[0]
+    return weightLogs.find((w) => w.date === yStr)?.weightKg
+      ?? weightLogs[weightLogs.length - 1]?.weightKg
+      ?? null
+  }, [])
+
+  // 전날 대비 체중 변화 (양수=증가, 음수=감소)
+  const weightDiff = todayWeight != null && yesterdayWeight != null
+    ? (todayWeight - yesterdayWeight).toFixed(1)
+    : null
+
+  const handleWeightSave = () => {
+    const val = parseFloat(weightInput)
+    if (isNaN(val) || val < 20 || val > 300) {
+      setWeightError('올바른 체중을 입력해주세요 (20–300 kg)')
+      return
+    }
+    setTodayWeight(val)
+    setShowWeightModal(false)
+    setWeightInput('')
+    setWeightError('')
+  }
+
+  // ── 식단 (MOCK_DATE 기준) ────────────────────────────────
   const todayMeals = useMemo(
-    () => mealLogs.filter((m) => m.date === TODAY),
+    () => mealLogs.filter((m) => m.date === MOCK_DATE),
     []
-  )//얘가 먹은거 기록
+  )
 
   const totalCaloriesEaten = useMemo(
     () => todayMeals.reduce((s, m) => s + m.calories, 0),
     [todayMeals]
-  )//얘는 칼로리 계산
+  )
 
-  // 매크로 계산: foods 테이블 기준 비율로 추산 이라는데 저는 아직 이해못함;;
+  // 섭취한 음식의 영양소를 foods 테이블 기반으로 비례 계산
+  // ratio = 실제 섭취량(g) / 1회 제공량(g)
   const macros = useMemo(() => {
     const foodMap = Object.fromEntries(foods.map((f) => [f.name, f]))
     return todayMeals.reduce(
@@ -106,7 +151,7 @@ export default function HomePage() {
     )
   }, [todayMeals])
 
-  // 식사유형별 그룹
+  // 끼니별로 식단 로그 묶기
   const mealGroups = useMemo(() => {
     const map = {}
     for (const m of todayMeals) {
@@ -116,10 +161,9 @@ export default function HomePage() {
     return map
   }, [todayMeals])
 
-
-  // 얘부터 운동
+  // ── 운동 (MOCK_DATE 기준) ────────────────────────────────
   const todayWorkouts = useMemo(
-    () => workoutLogs.filter((w) => w.date === TODAY),
+    () => workoutLogs.filter((w) => w.date === MOCK_DATE),
     []
   )
   const totalBurned = useMemo(
@@ -127,12 +171,13 @@ export default function HomePage() {
     [todayWorkouts]
   )
 
-  // 체중 파트
-  const latestWeight = weightLogs[weightLogs.length - 1]?.weightKg ?? user.weight
-  const bmi = (latestWeight / ((user.height / 100) ** 2)).toFixed(1)
-
-  const caloriePct  = totalCaloriesEaten / goal.dailyCalories
-  const netCalories = goal.dailyCalories - totalCaloriesEaten + totalBurned
+  // ── 파생 수치 ────────────────────────────────────────────
+  // 헤더 "현재 체중": 오늘 입력값 → weightLogs 마지막값 → mock user 순으로 대체
+  const displayWeight = todayWeight ?? weightLogs[weightLogs.length - 1]?.weightKg ?? user.weight
+  const bmi           = (displayWeight / ((user.height / 100) ** 2)).toFixed(1)
+  const caloriePct    = totalCaloriesEaten / goal.dailyCalories
+  // 남은 칼로리 = 목표 - 섭취 + 소모 (운동으로 태운 만큼 더 먹을 수 있음)
+  const netCalories   = goal.dailyCalories - totalCaloriesEaten + totalBurned
 
   const handleLogout = () => { logout(); navigate('/login', { replace: true }) }
 
@@ -143,7 +188,7 @@ export default function HomePage() {
       <div className="bg-gradient-to-br from-blue-600 to-blue-500 px-5 pt-12 pb-8 text-white">
         <div className="flex items-center justify-between mb-1">
           <p className="text-blue-100 text-sm">
-            {new Date(TODAY).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}
+            {new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}
           </p>
           <button
             onClick={handleLogout}
@@ -155,10 +200,10 @@ export default function HomePage() {
         <h1 className="text-2xl font-bold">안녕하세요, {userName}님!</h1>
         <p className="text-blue-100 text-sm mt-0.5">오늘도 목표를 향해 나아가요 💪</p>
 
-        {/* 최상단 3개 */}
+        {/* 핵심 지표 3개 요약 */}
         <div className="grid grid-cols-3 gap-3 mt-5">
           {[
-            { label: '현재 체중', value: `${latestWeight} kg` },
+            { label: '현재 체중', value: `${displayWeight} kg` },
             { label: '목표 체중', value: `${goal.targetWeight} kg` },
             { label: 'BMI',       value: bmi },
           ].map((item) => (
@@ -172,10 +217,55 @@ export default function HomePage() {
 
       <div className="px-4 space-y-4 mt-4">
 
-        {/* 당일 칼로리 */}
+        {/* ── 공복 몸무게 카드 ───────────────────────────── */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-sm font-semibold text-gray-500">오늘 공복 몸무게</h2>
+            <span className="text-xs text-gray-400">{TODAY}</span>
+          </div>
+
+          {todayWeight == null ? (
+            /* 미입력 — 입력 유도 버튼 표시 */
+            <div className="flex items-center justify-between mt-3">
+              <p className="text-sm text-gray-400">아직 입력하지 않았어요</p>
+              <button
+                onClick={() => setShowWeightModal(true)}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition"
+              >
+                <span>+</span> 입력하기
+              </button>
+            </div>
+          ) : (
+            /* 입력 완료 — 체중과 전날 대비 증감 표시 */
+            <div className="flex items-center justify-between mt-2">
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold text-gray-800">{todayWeight}</span>
+                <span className="text-base text-gray-500">kg</span>
+                {/* 감소=파란색, 증가=빨간색, 동일=회색 */}
+                {weightDiff !== null && (
+                  <span className={`text-sm font-medium ${
+                    parseFloat(weightDiff) < 0 ? 'text-blue-500' :
+                    parseFloat(weightDiff) > 0 ? 'text-red-400' : 'text-gray-400'
+                  }`}>
+                    {parseFloat(weightDiff) > 0 ? '+' : ''}{weightDiff} kg
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => { setWeightInput(String(todayWeight)); setShowWeightModal(true) }}
+                className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg transition"
+              >
+                수정
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── 오늘의 칼로리 ─────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <h2 className="text-sm font-semibold text-gray-500 mb-4">오늘의 칼로리</h2>
           <div className="flex items-center gap-6">
+            {/* 목표 초과 시 빨간색으로 경고 */}
             <RingProgress
               pct={caloriePct}
               color={caloriePct >= 1 ? '#ef4444' : '#3b82f6'}
@@ -202,34 +292,28 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* 영양소 */}
+        {/* ── 영양소 달성률 ─────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <h2 className="text-sm font-semibold text-gray-500 mb-4">영양소 달성률</h2>
           <div className="space-y-3">
-            <MacroBar
-              label="단백질"
-              current={Math.round(macros.protein)}
-              goal={goal.protein}
-              color="bg-blue-500"
-            />
-            <MacroBar
-              label="탄수화물"
-              current={Math.round(macros.carbs)}
-              goal={goal.carbs}
-              color="bg-amber-400"
-            />
-            <MacroBar
-              label="지방"
-              current={Math.round(macros.fat)}
-              goal={goal.fat}
-              color="bg-rose-400"
-            />
+            <MacroBar label="단백질"   current={Math.round(macros.protein)} goal={goal.protein} color="bg-blue-500" />
+            <MacroBar label="탄수화물" current={Math.round(macros.carbs)}   goal={goal.carbs}   color="bg-amber-400" />
+            <MacroBar label="지방"     current={Math.round(macros.fat)}     goal={goal.fat}     color="bg-rose-400" />
           </div>
         </div>
 
-        {/* 당일 식단 */}
+        {/* ── 오늘의 식단 ───────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-          <h2 className="text-sm font-semibold text-gray-500 mb-3">오늘의 식단</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-500">오늘의 식단</h2>
+            {/* 식단 기록 페이지로 이동 */}
+            <button
+              onClick={() => navigate('/diet')}
+              className="text-xs text-blue-500 hover:text-blue-700 font-medium transition"
+            >
+              기록하기 →
+            </button>
+          </div>
           <div className="space-y-3">
             {['breakfast', 'lunch', 'dinner', 'snack'].map((type) => {
               const items = mealGroups[type]
@@ -252,13 +336,21 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* 당일 운동 */}
+        {/* ── 오늘의 운동 ───────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-gray-500">오늘의 운동</h2>
-            <span className="text-xs font-semibold text-green-600 bg-green-50 px-2.5 py-1 rounded-full">
-              -{totalBurned} kcal
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-green-600 bg-green-50 px-2.5 py-1 rounded-full">
+                -{totalBurned} kcal
+              </span>
+              <button
+                onClick={() => navigate('/workout')}
+                className="text-xs text-green-500 hover:text-green-700 font-medium transition"
+              >
+                기록하기 →
+              </button>
+            </div>
           </div>
 
           {todayWorkouts.length === 0 ? (
@@ -269,6 +361,7 @@ export default function HomePage() {
                 <div key={w.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                   <div>
                     <p className="text-sm font-medium text-gray-700">{w.exerciseName}</p>
+                    {/* 웨이트 운동: 세트×회수·무게, 유산소: 시간(분) */}
                     <p className="text-xs text-gray-400 mt-0.5">
                       {w.sets && w.reps
                         ? `${w.sets}세트 × ${w.reps}회${w.weightKg ? ` · ${w.weightKg}kg` : ''}`
@@ -281,22 +374,13 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* 운동 요약 */}
+          {/* 운동 요약 통계 — 운동이 있을 때만 표시 */}
           {todayWorkouts.length > 0 && (
             <div className="grid grid-cols-3 gap-2 mt-4">
               {[
-                {
-                  label: '운동 수',
-                  value: `${todayWorkouts.length}개`,
-                },
-                {
-                  label: '총 세트',
-                  value: `${todayWorkouts.filter(w => w.sets).reduce((s, w) => s + w.sets, 0)}세트`,
-                },
-                {
-                  label: '유산소',
-                  value: `${todayWorkouts.filter(w => w.durationMin).reduce((s, w) => s + w.durationMin, 0)}분`,
-                },
+                { label: '운동 수', value: `${todayWorkouts.length}개` },
+                { label: '총 세트', value: `${todayWorkouts.filter(w => w.sets).reduce((s, w) => s + w.sets, 0)}세트` },
+                { label: '유산소',  value: `${todayWorkouts.filter(w => w.durationMin).reduce((s, w) => s + w.durationMin, 0)}분` },
               ].map((stat) => (
                 <div key={stat.label} className="bg-gray-50 rounded-xl p-3 text-center">
                   <p className="text-sm font-semibold text-gray-700">{stat.value}</p>
@@ -307,15 +391,15 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* 신체 지표 */}
+        {/* ── 신체 지표 ─────────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <h2 className="text-sm font-semibold text-gray-500 mb-3">신체 지표</h2>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: '체지방률',  value: `${user.bodyFatRate}%`,          sub: '정상 범위 10–20%' },
-              { label: '골격근량',  value: `${user.skeletalMuscleMass} kg`,  sub: '목표 37 kg' },
-              { label: '키',        value: `${user.height} cm`,             sub: '' },
-              { label: '수면 시간', value: `${user.height > 0 ? '6.5시간' : ''}`, sub: '권장 7–9시간' },
+              { label: '체지방률',  value: `${user.bodyFatRate}%`,         sub: '정상 범위 10–20%' },
+              { label: '골격근량',  value: `${user.skeletalMuscleMass} kg`, sub: '목표 37 kg' },
+              { label: '키',        value: `${user.height} cm`,            sub: '' },
+              { label: '수면 시간', value: '6.5시간',                        sub: '권장 7–9시간' },
             ].map((item) => (
               <div key={item.label} className="bg-gray-50 rounded-xl p-3">
                 <p className="text-base font-semibold text-gray-800">{item.value}</p>
@@ -327,10 +411,56 @@ export default function HomePage() {
         </div>
 
       </div>
+
+      {/* ── 공복 체중 입력 모달 (바텀시트) ─────────────────── */}
+      {showWeightModal && (
+        // 배경 클릭 시 모달 닫기
+        <div
+          className="fixed inset-0 bg-black/40 flex items-end justify-center z-50 px-4 pb-6"
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowWeightModal(false); setWeightError('') } }}
+        >
+          <div className="w-full max-w-lg bg-white rounded-2xl p-6 shadow-xl">
+            <h3 className="text-base font-bold text-gray-800 mb-1">공복 몸무게 입력</h3>
+            <p className="text-xs text-gray-400 mb-5">{TODAY} 기준</p>
+
+            <div className="relative mb-2">
+              {/* Enter 키로도 저장 가능 */}
+              <input
+                type="number"
+                value={weightInput}
+                onChange={(e) => { setWeightInput(e.target.value); setWeightError('') }}
+                onKeyDown={(e) => e.key === 'Enter' && handleWeightSave()}
+                placeholder="예) 74.5"
+                min={20} max={300} step={0.1}
+                autoFocus
+                className="w-full px-4 py-3 pr-12 rounded-xl border border-gray-300 text-lg font-semibold outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium">kg</span>
+            </div>
+            {weightError && <p className="text-xs text-red-500 mb-3">{weightError}</p>}
+
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => { setShowWeightModal(false); setWeightError('') }}
+                className="flex-1 py-3 rounded-xl border border-gray-300 text-gray-600 text-sm font-medium hover:bg-gray-50 transition"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleWeightSave}
+                className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition"
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
+// 칼로리 항목 한 줄 표시용 컴포넌트
 function CalorieRow({ label, value, color, bold }) {
   return (
     <div className="flex items-center justify-between">

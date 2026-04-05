@@ -253,6 +253,7 @@ export const workoutLogs = [
     reps: 10,
     weightKg: 70,
     durationMin: null,
+    distanceKm: null,
     caloriesBurned: 180,
   },
   {
@@ -263,6 +264,7 @@ export const workoutLogs = [
     reps: 10,
     weightKg: 45,
     durationMin: null,
+    distanceKm: null,
     caloriesBurned: 120,
   },
   {
@@ -273,6 +275,7 @@ export const workoutLogs = [
     reps: null,
     weightKg: null,
     durationMin: 30,
+    distanceKm: 5.0,
     caloriesBurned: 310,
   },
   {
@@ -283,6 +286,7 @@ export const workoutLogs = [
     reps: 8,
     weightKg: 90,
     durationMin: null,
+    distanceKm: null,
     caloriesBurned: 220,
   },
   {
@@ -293,6 +297,7 @@ export const workoutLogs = [
     reps: 6,
     weightKg: 110,
     durationMin: null,
+    distanceKm: null,
     caloriesBurned: 250,
   },
   {
@@ -303,6 +308,7 @@ export const workoutLogs = [
     reps: null,
     weightKg: null,
     durationMin: 3,
+    distanceKm: null,
     caloriesBurned: 40,
   },
   {
@@ -313,6 +319,7 @@ export const workoutLogs = [
     reps: 8,
     weightKg: 0,
     durationMin: null,
+    distanceKm: null,
     caloriesBurned: 160,
   },
   {
@@ -323,6 +330,7 @@ export const workoutLogs = [
     reps: 12,
     weightKg: 55,
     durationMin: null,
+    distanceKm: null,
     caloriesBurned: 130,
   },
   {
@@ -333,6 +341,7 @@ export const workoutLogs = [
     reps: null,
     weightKg: null,
     durationMin: 20,
+    distanceKm: null,
     caloriesBurned: 200,
   },
 ];

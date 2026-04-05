@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
@@ -11,9 +12,16 @@ export default function Register() {
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
 
+  // 회원가입 직후인지 여부를 추적
+  // ref를 쓰는 이유: state로 하면 리렌더 사이클이 꼬일 수 있어서
+  // handleSubmit에서 true로 설정 → useEffect가 /onboarding 으로 보냄
+  const justRegistered = useRef(false)
+
+  // isAuthenticated가 바뀔 때마다 리다이렉트 목적지 결정
+  // 방금 가입한 경우 → /onboarding, 이미 로그인된 상태로 접근한 경우 → /
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/', { replace: true })
+      navigate(justRegistered.current ? '/onboarding' : '/', { replace: true })
     }
   }, [isAuthenticated])
 
@@ -25,14 +33,16 @@ export default function Register() {
     birthDate: '',
     gender: 'male',
   })
-  const [errors, setErrors] = useState({})
+  const [errors, setErrors]   = useState({})
   const [loading, setLoading] = useState(false)
 
+  // 입력 값 업데이트와 동시에 해당 필드 에러 초기화
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
     setErrors((prev) => ({ ...prev, [e.target.name]: '' }))
   }
 
+  // 제출 전 필드별 유효성 검사, 에러 객체 반환
   const validate = () => {
     const next = {}
     if (!form.name.trim())             next.name = '이름을 입력해주세요.'
@@ -54,7 +64,10 @@ export default function Register() {
 
     setLoading(true)
     try {
+      // 실제 API 호출 대신 600ms 딜레이로 네트워크 요청 시뮬레이션
       await new Promise((r) => setTimeout(r, 600))
+      // 플래그 먼저 세우고 login 호출 → useEffect가 /onboarding으로 이동시킴
+      justRegistered.current = true
       login(form.email, form.name)
     } finally {
       setLoading(false)
@@ -136,7 +149,7 @@ export default function Register() {
               />
             </Field>
 
-            {/* 성별 */}
+            {/* 성별 — 라디오를 sr-only로 숨기고 label을 버튼처럼 스타일링 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">성별</label>
               <div className="flex gap-3">
@@ -183,6 +196,7 @@ export default function Register() {
   )
 }
 
+// 라벨 + 인풋 + 에러 메시지를 묶는 공통 래퍼
 function Field({ label, error, children }) {
   return (
     <div>
@@ -193,6 +207,7 @@ function Field({ label, error, children }) {
   )
 }
 
+// 에러 여부에 따라 테두리 색을 바꾸는 인풋 클래스
 function inputClass(error) {
   return `w-full px-4 py-2.5 rounded-lg border text-sm outline-none transition
     ${error
