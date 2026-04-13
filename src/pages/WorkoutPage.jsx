@@ -1,53 +1,42 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { exercises, workoutLogs, user } from '../mock'
+import { workoutLogs, user } from '../mock'
+import { EXERCISES, MUSCLES, getExerciseById, getExercisesByMuscle, searchExercises } from '../exerciseData.js'
 
 // DietPage와 동일하게 mock 데이터가 있는 날짜로 고정
 const MOCK_DATE = '2026-03-26'
 
 const CATEGORY_COLOR = {
-  웨이트: 'bg-blue-100 text-blue-600',
-  맨몸:   'bg-purple-100 text-purple-600',
-  유산소: 'bg-green-100 text-green-600',
+  strength:     'bg-blue-100 text-blue-600',
+  cardio:       'bg-green-100 text-green-600',
+  powerlifting: 'bg-orange-100 text-orange-600',
 }
 
-const CATEGORIES = ['전체', '웨이트', '맨몸', '유산소']
+const CATEGORY_LABEL = { strength: '웨이트', cardio: '유산소', powerlifting: '파워리프팅' }
+
+const CATEGORIES = ['전체', 'strength', 'cardio', 'powerlifting']
 
 // ── 칼로리 계산 (MET 공식) ────────────────────────────────────
 // 유산소:      MET × 체중(kg) × 시간(h)  — durationMin 직접 사용
 // 웨이트/맨몸: MET × 체중(kg) × 시간(h)  — 세트당 6분(운동+휴식) 추정
+const DEFAULT_MET = { cardio: 7.0, strength: 5.5, stretching: 3.0 }
+
 function calcCalories(exercise, inputs, weightKg) {
-  if (exercise.category === '유산소') {
+  const met = DEFAULT_MET[exercise.category] ?? 5.0
+  if (exercise.category === 'cardio') {
     const min = parseFloat(inputs.durationMin)
     if (isNaN(min) || min <= 0) return null
-    return Math.round(exercise.met * weightKg * (min / 60))
+    return Math.round(met * weightKg * (min / 60))
   } else {
     const sets = parseFloat(inputs.sets)
     if (isNaN(sets) || sets <= 0) return null
-    return Math.round(exercise.met * weightKg * (sets * 6 / 60))
+    return Math.round(met * weightKg * (sets * 6 / 60))
   }
 }
 
 // workoutLogs → 내부 로그 형식으로 변환
 function initLogs() {
-  const exMap = Object.fromEntries(exercises.map((e) => [e.name, e]))
-  return workoutLogs
-    .filter((w) => w.date === MOCK_DATE)
-    .map((w, i) => {
-      const ex = exMap[w.exerciseName]
-      if (!ex) return null
-      return {
-        id:            i + 1,
-        exercise:      ex,
-        sets:          w.sets,
-        reps:          w.reps,
-        weightKg:      w.weightKg,
-        durationMin:   w.durationMin,
-        distanceKm:    w.distanceKm ?? null,
-        caloriesBurned: w.caloriesBurned,
-      }
-    })
-    .filter(Boolean)
+  return []
 }
 
 export default function WorkoutPage() {
@@ -60,11 +49,12 @@ export default function WorkoutPage() {
   const [selectedExercise, setSelectedExercise] = useState(null) // null=STEP1, 값=STEP2
   const [formInputs, setFormInputs]             = useState({ sets: '', reps: '', weightKg: '', durationMin: '', distanceKm: '' })
   const [formError, setFormError]               = useState('')
+  const [previewExercise, setPreviewExercise]   = useState(null) // 미리보기 바텀시트
 
   // ── 파생 상태 ────────────────────────────────────────────────
   const filteredExercises = useMemo(() => {
     const q = query.trim().toLowerCase()
-    let list = exercises
+    let list = EXERCISES
     if (categoryFilter !== '전체') list = list.filter((e) => e.category === categoryFilter)
     if (!q) return list
     return list.filter((e) => e.name.toLowerCase().includes(q))
@@ -79,7 +69,7 @@ export default function WorkoutPage() {
     [logs]
   )
   const totalCardioMin = useMemo(
-    () => logs.filter((l) => l.exercise.category === '유산소').reduce((s, l) => s + (l.durationMin ?? 0), 0),
+    () => logs.filter((l) => l.exercise.category === 'cardio').reduce((s, l) => s + (l.durationMin ?? 0), 0),
     [logs]
   )
   const caloriePreview = useMemo(() => {
@@ -97,7 +87,7 @@ export default function WorkoutPage() {
   const handleAddWorkout = () => {
     if (!selectedExercise) return
 
-    if (selectedExercise.category === '유산소') {
+    if (selectedExercise.category === 'cardio') {
       const min = parseFloat(formInputs.durationMin)
       if (isNaN(min) || min <= 0) {
         setFormError('운동 시간을 입력해주세요')
@@ -114,11 +104,11 @@ export default function WorkoutPage() {
     const newLog = {
       id:            Date.now(),
       exercise:      selectedExercise,
-      sets:          selectedExercise.category !== '유산소' ? parseFloat(formInputs.sets) : null,
-      reps:          selectedExercise.category !== '유산소' ? parseFloat(formInputs.reps) : null,
-      weightKg:      selectedExercise.category !== '유산소' ? (parseFloat(formInputs.weightKg) || 0) : null,
-      durationMin:   selectedExercise.category === '유산소' ? parseFloat(formInputs.durationMin) : null,
-      distanceKm:    selectedExercise.category === '유산소' ? (parseFloat(formInputs.distanceKm) || null) : null,
+      sets:          selectedExercise.category !== 'cardio' ? parseFloat(formInputs.sets) : null,
+      reps:          selectedExercise.category !== 'cardio' ? parseFloat(formInputs.reps) : null,
+      weightKg:      selectedExercise.category !== 'cardio' ? (parseFloat(formInputs.weightKg) || 0) : null,
+      durationMin:   selectedExercise.category === 'cardio' ? parseFloat(formInputs.durationMin) : null,
+      distanceKm:    selectedExercise.category === 'cardio' ? (parseFloat(formInputs.distanceKm) || null) : null,
       caloriesBurned: calories,
     }
     setLogs((prev) => [...prev, newLog])
@@ -136,10 +126,10 @@ export default function WorkoutPage() {
     setFormError('')
   }
 
-  const isCardio = selectedExercise?.category === '유산소'
+  const isCardio = selectedExercise?.category === 'cardio'
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-36">
+    <div className="min-h-screen bg-gray-50 pb-48">
 
       {/* ── 헤더 ─────────────────────────────────────────────── */}
       <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-4 flex items-center justify-between">
@@ -189,7 +179,7 @@ export default function WorkoutPage() {
       </div>
 
       {/* ── 하단 고정 바 ─────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4 shadow-lg">
+      <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4 shadow-lg">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm font-semibold text-gray-700">오늘 소모 칼로리</span>
           <div className="flex items-baseline gap-1">
@@ -245,7 +235,7 @@ export default function WorkoutPage() {
                           : 'bg-white text-gray-500 border-gray-200 hover:border-green-300'
                       }`}
                     >
-                      {cat}
+                      {cat === '전체' ? '전체' : (CATEGORY_LABEL[cat] ?? cat)}
                     </button>
                   ))}
                 </div>
@@ -256,19 +246,27 @@ export default function WorkoutPage() {
                     <p className="text-sm text-gray-400 text-center py-6">검색 결과가 없어요</p>
                   ) : (
                     filteredExercises.map((ex) => (
-                      <button
-                        key={ex.id}
-                        onClick={() => handleSelectExercise(ex)}
-                        className="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-gray-50 transition text-left"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_COLOR[ex.category]}`}>
-                            {ex.category}
-                          </span>
-                          <span className="text-sm font-medium text-gray-800">{ex.name}</span>
-                        </div>
-                        <span className="text-xs text-gray-400 shrink-0 ml-2">{ex.targetMuscle}</span>
-                      </button>
+                      <div key={ex.id} className="flex items-center">
+                        <button
+                          onClick={() => handleSelectExercise(ex)}
+                          className="flex-1 flex items-center justify-between px-4 py-3 rounded-xl hover:bg-gray-50 transition text-left"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_COLOR[ex.category]}`}>
+                              {CATEGORY_LABEL[ex.category] ?? ex.category}
+                            </span>
+                            <span className="text-sm font-medium text-gray-800">{ex.name}</span>
+                          </div>
+                          <span className="text-xs text-gray-400 shrink-0 ml-2">{ex.primaryMuscles?.[0] ?? ''}</span>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setPreviewExercise(ex) }}
+                          className="shrink-0 w-7 h-7 mr-1 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-400 text-xs font-bold transition"
+                          aria-label="운동 설명 보기"
+                        >
+                          ?
+                        </button>
+                      </div>
                     ))
                   )}
                 </div>
@@ -294,9 +292,9 @@ export default function WorkoutPage() {
                 <div className="flex items-center gap-2 px-5 mb-4">
                   <span className="text-sm font-semibold text-gray-800">{selectedExercise.name}</span>
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_COLOR[selectedExercise.category]}`}>
-                    {selectedExercise.category}
+                    {CATEGORY_LABEL[selectedExercise.category] ?? selectedExercise.category}
                   </span>
-                  <span className="text-xs text-gray-400">{selectedExercise.targetMuscle}</span>
+                  <span className="text-xs text-gray-400">{selectedExercise.primaryMuscles?.[0] ?? ''}</span>
                 </div>
 
                 <div className="px-5 pb-5 space-y-3">
@@ -389,6 +387,18 @@ export default function WorkoutPage() {
           </div>
         </div>
       )}
+
+      {/* ── 운동 미리보기 바텀시트 ───────────────────────────── */}
+      {previewExercise && (
+        <ExercisePreviewSheet
+          exercise={previewExercise}
+          onClose={() => setPreviewExercise(null)}
+          onSelect={() => {
+            handleSelectExercise(previewExercise)
+            setPreviewExercise(null)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -398,7 +408,7 @@ export default function WorkoutPage() {
 function WorkoutCard({ log, onDelete }) {
   const { exercise: ex, sets, reps, weightKg, durationMin, distanceKm, caloriesBurned } = log
 
-  const detailText = ex.category === '유산소'
+  const detailText = ex.category === 'cardio'
     ? [durationMin && `${durationMin}분`, distanceKm && `${distanceKm}km`].filter(Boolean).join(' · ')
     : [sets && reps && `${sets}세트 × ${reps}회`, weightKg > 0 && `${weightKg}kg`].filter(Boolean).join(' · ')
 
@@ -408,7 +418,7 @@ function WorkoutCard({ log, onDelete }) {
         <div className="flex items-center gap-2 mb-1.5">
           <span className="text-sm font-semibold text-gray-800">{ex.name}</span>
           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_COLOR[ex.category]}`}>
-            {ex.category}
+            {CATEGORY_LABEL[ex.category] ?? ex.category}
           </span>
         </div>
         <button
@@ -419,7 +429,7 @@ function WorkoutCard({ log, onDelete }) {
           ×
         </button>
       </div>
-      <p className="text-xs text-gray-500 mb-2">{ex.targetMuscle}</p>
+      <p className="text-xs text-gray-500 mb-2">{ex.primaryMuscles?.[0] ?? '—'}</p>
       <div className="flex items-center justify-between">
         <span className="text-sm text-gray-700">{detailText || '—'}</span>
         <span className="text-sm font-semibold text-green-600">-{caloriesBurned} kcal</span>
@@ -452,4 +462,58 @@ function inputCls(hasError) {
       ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-100'
       : 'border-gray-300 focus:border-green-500 focus:ring-2 focus:ring-green-100',
   ].join(' ')
+}
+
+function ExercisePreviewSheet({ exercise, onClose, onSelect }) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-end justify-center z-[60] px-4 pb-6"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-5 space-y-4">
+
+        {/* 헤더 */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_COLOR[exercise.category]}`}>
+              {CATEGORY_LABEL[exercise.category] ?? exercise.category}
+            </span>
+            <h3 className="text-base font-bold text-gray-800">{exercise.name}</h3>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+        </div>
+
+        {/* 이미지 */}
+        {exercise.images?.[0] ? (
+          <img
+            src={`https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/${exercise.images[0]}`}
+            alt={exercise.name}
+            className="w-full rounded-xl object-cover max-h-52"
+          />
+        ) : (
+          <div className="w-full h-40 bg-gray-100 rounded-xl flex items-center justify-center">
+            <span className="text-sm text-gray-400">동작 이미지 준비 중</span>
+          </div>
+        )}
+
+        {/* 운동 정보 */}
+        <div className="space-y-1">
+          <p className="text-xs text-gray-500">
+            타겟 근육: <span className="font-medium text-gray-700">{exercise.primaryMuscles?.join(', ') ?? '—'}</span>
+          </p>
+          {exercise.instructions && (
+            <p className="text-sm text-gray-600">{exercise.instructions}</p>
+          )}
+        </div>
+
+        {/* 선택 버튼 */}
+        <button
+          onClick={onSelect}
+          className="w-full py-3 rounded-xl bg-green-500 hover:bg-green-600 text-white text-sm font-semibold transition"
+        >
+          이 운동으로 기록하기
+        </button>
+      </div>
+    </div>
+  )
 }

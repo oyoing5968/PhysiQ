@@ -224,25 +224,6 @@ export const mealLogs = [
   { id: 15, date: "2026-03-27", mealType: "snack",     foodName: "사과",           amount: 150, calories: 78  },
 ];
 
-// ─── 운동 목록 ────────────────────────────────────────────────
-export const exercises = [
-  { id: 1,  name: "벤치프레스",    category: "웨이트", targetMuscle: "가슴",      met: 6.0 },
-  { id: 2,  name: "스쿼트",        category: "웨이트", targetMuscle: "하체",      met: 6.0 },
-  { id: 3,  name: "데드리프트",    category: "웨이트", targetMuscle: "전신",      met: 6.0 },
-  { id: 4,  name: "풀업",          category: "웨이트", targetMuscle: "등/이두",   met: 8.0 },
-  { id: 5,  name: "오버헤드프레스", category: "웨이트", targetMuscle: "어깨",     met: 6.0 },
-  { id: 6,  name: "런지",          category: "웨이트", targetMuscle: "하체",      met: 5.0 },
-  { id: 7,  name: "덤벨컬",        category: "웨이트", targetMuscle: "이두",      met: 5.0 },
-  { id: 8,  name: "트라이셉스딥스", category: "웨이트", targetMuscle: "삼두",     met: 5.0 },
-  { id: 9,  name: "플랭크",        category: "맨몸",   targetMuscle: "코어",      met: 3.5 },
-  { id: 10, name: "러닝 (트레드밀)", category: "유산소", targetMuscle: "전신",     met: 9.8 },
-  { id: 11, name: "사이클",        category: "유산소", targetMuscle: "하체",      met: 8.0 },
-  { id: 12, name: "줄넘기",        category: "유산소", targetMuscle: "전신",      met: 10.0 },
-  { id: 13, name: "수영",          category: "유산소", targetMuscle: "전신",      met: 8.3 },
-  { id: 14, name: "버피",          category: "맨몸",   targetMuscle: "전신",      met: 8.0 },
-  { id: 15, name: "케이블 로우",   category: "웨이트", targetMuscle: "등",        met: 5.5 },
-];
-
 // ─── 운동 기록 ────────────────────────────────────────────────
 export const workoutLogs = [
   {
@@ -346,8 +327,29 @@ export const workoutLogs = [
   },
 ];
 
-// ─── 체중 기록 (30일치) ───────────────────────────────────────
+// ─── 결정론적 노이즈 생성 (seed → 0~1) ──────────────────────
+function seededNoise(seed) {
+  const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453
+  return x - Math.floor(x)
+}
+
+// 날짜 문자열 생성 헬퍼 (2026-01-01 기준 n일 후)
+function dateFrom(startDate, n) {
+  const d = new Date(startDate)
+  d.setDate(d.getDate() + n)
+  return d.toISOString().split('T')[0]
+}
+
+// ─── 체중 기록 (90일치: 2026-01-01 ~ 2026-03-31) ─────────────
+// 앞 60일은 생성, 뒤 30일은 기존 실측값 유지
+const _generatedWeightLogs = Array.from({ length: 60 }, (_, i) => {
+  const trend   = 76.5 - (1.1 / 59) * i          // 76.5 → 75.4 선형 감소
+  const noise   = (seededNoise(i + 1) - 0.5) * 0.6
+  return { date: dateFrom('2026-01-01', i), weightKg: Math.round((trend + noise) * 10) / 10 }
+})
+
 export const weightLogs = [
+  ..._generatedWeightLogs,
   { date: "2026-03-02", weightKg: 76.2 },
   { date: "2026-03-03", weightKg: 76.0 },
   { date: "2026-03-04", weightKg: 75.9 },
@@ -379,6 +381,27 @@ export const weightLogs = [
   { date: "2026-03-30", weightKg: 75.4 },
   { date: "2026-03-31", weightKg: 75.4 },
 ];
+
+// ─── 체지방률 + 골격근량 기록 (90일치) ───────────────────────
+// bodyFatRate: 19.8 → 18.5 감소 트렌드, skeletalMuscleMass: 34.5 → 35.2 증가 트렌드
+export const bodyCompositionLogs = Array.from({ length: 90 }, (_, i) => {
+  const fatTrend    = 19.8 - (1.3 / 89) * i
+  const fatNoise    = (seededNoise(i + 200) - 0.5) * 0.6
+  const muscleTrend = 34.5 + (0.7 / 89) * i
+  const muscleNoise = (seededNoise(i + 400) - 0.5) * 0.4
+  return {
+    date:                dateFrom('2026-01-01', i),
+    bodyFatRate:         Math.round((fatTrend    + fatNoise)    * 10) / 10,
+    skeletalMuscleMass:  Math.round((muscleTrend + muscleNoise) * 10) / 10,
+  }
+})
+
+// ─── 일별 칼로리 섭취 기록 (90일치) ──────────────────────────
+// 목표 2100kcal 기준 ±300 범위 결정론적 노이즈
+export const dailyCalorieLogs = Array.from({ length: 90 }, (_, i) => ({
+  date:     dateFrom('2026-01-01', i),
+  calories: Math.round(2100 + (seededNoise(i + 600) - 0.5) * 600),
+}))
 
 // ─── 추천 식단 목록 ───────────────────────────────────────────
 export const recommendedMealPlans = [

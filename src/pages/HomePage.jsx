@@ -182,7 +182,7 @@ export default function HomePage() {
   const handleLogout = () => { logout(); navigate('/login', { replace: true }) }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-10">
+    <div className="min-h-screen bg-gray-50 pb-24">
 
       {/* ── 헤더 ──────────────────────────────────────────── */}
       <div className="bg-gradient-to-br from-blue-600 to-blue-500 px-5 pt-12 pb-8 text-white">
@@ -306,13 +306,20 @@ export default function HomePage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-gray-500">오늘의 식단</h2>
-            {/* 식단 기록 페이지로 이동 */}
-            <button
-              onClick={() => navigate('/diet')}
-              className="text-xs text-blue-500 hover:text-blue-700 font-medium transition"
-            >
-              기록하기 →
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => navigate('/recommend')}
+                className="text-xs text-orange-500 hover:text-orange-700 font-medium transition"
+              >
+                식단 추천 →
+              </button>
+              <button
+                onClick={() => navigate('/diet')}
+                className="text-xs text-blue-500 hover:text-blue-700 font-medium transition"
+              >
+                기록하기 →
+              </button>
+            </div>
           </div>
           <div className="space-y-3">
             {['breakfast', 'lunch', 'dinner', 'snack'].map((type) => {

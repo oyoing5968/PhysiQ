@@ -20,7 +20,7 @@ const MEAL_COLOR = {
 // ratio = 실제 섭취량 / 1회 제공량 으로 영양소를 비례 계산
 function initLogs() {
   const foodMap = Object.fromEntries(foods.map((f) => [f.name, f]))
-  return mealLogs
+  const mockLogs = mealLogs
     .filter((m) => m.date === MOCK_DATE)
     .map((m, i) => {
       const food = foodMap[m.foodName]
@@ -38,6 +38,21 @@ function initLogs() {
       }
     })
     .filter(Boolean)
+
+  // /recommend 페이지에서 추가한 추천 식단 병합 (끼니 타입 기준으로 mock 항목 대체)
+  let recommendedLogs = []
+  try {
+    const raw = localStorage.getItem('physiq_today_meals')
+    if (raw) recommendedLogs = JSON.parse(raw)
+  } catch { /* noop */ }
+
+  if (recommendedLogs.length === 0) return mockLogs
+
+  const recommendedTypes = new Set(recommendedLogs.map((l) => l.mealType))
+  return [
+    ...mockLogs.filter((l) => !recommendedTypes.has(l.mealType)),
+    ...recommendedLogs,
+  ]
 }
 
 export default function DietPage() {
@@ -133,7 +148,7 @@ export default function DietPage() {
   }, [selectedFood, amountInput])
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-36">
+    <div className="min-h-screen bg-gray-50 pb-48">
 
       {/* 헤더 — sticky로 스크롤 시에도 상단 고정 */}
       <div className="bg-white border-b border-gray-100 px-4 pt-12 pb-4 sticky top-0 z-10">
@@ -220,7 +235,7 @@ export default function DietPage() {
       </div>
 
       {/* 하단 총 칼로리 바 — fixed로 화면 하단에 항상 고정 */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4 shadow-lg">
+      <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4 shadow-lg">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-semibold text-gray-700">오늘 총 칼로리</span>
           <div className="flex items-baseline gap-1">
