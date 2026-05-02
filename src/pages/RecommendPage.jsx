@@ -105,9 +105,23 @@ export default function RecommendPage() {
     const fallback = { tdee: 2000, targetCalories: 1600, targetProtein: 140, targetCarbs: 160, targetFat: 44, goalLabel: '다이어트' }
     if (!profile) return fallback
 
-    const w = parseFloat(profile.weight)  || 70
-    const h = parseFloat(profile.height)  || 170
-    const bmr = 10 * w + 6.25 * h - 5 * 25 + 5   // Mifflin-St Jeor, 25세 기준 근사
+    const w = parseFloat(profile.weight) || 70
+    const h = parseFloat(profile.height) || 170
+
+    // 생년월일로 만 나이 계산, 없으면 25세 기본값
+    const age = (() => {
+      if (!profile.birthDate) return 25
+      const today = new Date()
+      const birth = new Date(profile.birthDate)
+      let a = today.getFullYear() - birth.getFullYear()
+      const m = today.getMonth() - birth.getMonth()
+      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) a--
+      return Math.max(10, Math.min(a, 120))
+    })()
+
+    // Mifflin-St Jeor: 남성 +5, 여성 -161
+    const genderOffset = profile.gender === 'female' ? -161 : 5
+    const bmr = 10 * w + 6.25 * h - 5 * age + genderOffset
     const multiplier = ACTIVITY_MULTIPLIER[profile.exerciseVolume] || 1.375
     const tdee = Math.round(bmr * multiplier)
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { workoutLogs, user } from '../mock'
-import { EXERCISES, MUSCLES, getExerciseById, getExercisesByMuscle, searchExercises } from '../exerciseData.js'
+import { EXERCISES, MUSCLES } from '../exerciseData.js'
 
 // DietPage와 동일하게 mock 데이터가 있는 날짜로 고정
 const MOCK_DATE = '2026-03-26'
@@ -34,9 +34,40 @@ function calcCalories(exercise, inputs, weightKg) {
   }
 }
 
-// workoutLogs → 내부 로그 형식으로 변환
+// mock exerciseName → category 매핑
+const MOCK_EXERCISE_CATEGORY = {
+  '벤치프레스':      'strength',
+  '오버헤드프레스':  'strength',
+  '러닝 (트레드밀)': 'cardio',
+  '스쿼트':         'strength',
+  '데드리프트':      'powerlifting',
+  '플랭크':         'strength',
+  '풀업':           'strength',
+  '케이블 로우':     'strength',
+  '줄넘기':         'cardio',
+}
+
+// workoutLogs(mock) → WorkoutPage 내부 로그 형식으로 변환
+// WorkoutCard는 log.exercise.{name, category, primaryMuscles}를 사용하므로
+// mock의 exerciseName 문자열로부터 stub 객체를 생성한다
 function initLogs() {
-  return []
+  return workoutLogs
+    .filter((w) => w.date === MOCK_DATE)
+    .map((w) => ({
+      id:            w.id,
+      exercise: {
+        id:             w.id,
+        name:           w.exerciseName,
+        category:       MOCK_EXERCISE_CATEGORY[w.exerciseName] ?? 'strength',
+        primaryMuscles: [],
+      },
+      sets:           w.sets,
+      reps:           w.reps,
+      weightKg:       w.weightKg,
+      durationMin:    w.durationMin,
+      distanceKm:     w.distanceKm,
+      caloriesBurned: w.caloriesBurned,
+    }))
 }
 
 export default function WorkoutPage() {

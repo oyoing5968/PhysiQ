@@ -1,3 +1,4 @@
+
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
@@ -32,6 +33,8 @@ export default function Onboarding() {
 
   // 모든 단계의 입력값을 하나의 객체로 관리
   const [data, setData] = useState({
+    gender: '',
+    birthDate: '',
     height: '',
     weight: '',
     bodyFat: '',
@@ -140,6 +143,36 @@ export default function Onboarding() {
 function BodyInfoStep({ data, update }) {
   return (
     <div className="space-y-5">
+
+      {/* 성별 */}
+      <Field label="성별">
+        <div className="flex gap-2">
+          {[{ value: 'male', label: '남성' }, { value: 'female', label: '여성' }].map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => update('gender', value)}
+              className={`flex-1 py-2.5 rounded-lg border text-sm font-medium transition
+                ${data.gender === value
+                  ? 'border-blue-500 bg-blue-50 text-blue-600'
+                  : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      {/* 생년월일 */}
+      <Field label="생년월일">
+        <input
+          type="date"
+          value={data.birthDate}
+          onChange={(e) => update('birthDate', e.target.value)}
+          max={new Date().toISOString().split('T')[0]}
+          className={inputCls()}
+        />
+      </Field>
 
       {/* 키 */}
       <Field label="키 (cm)">
