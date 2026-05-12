@@ -1,24 +1,19 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { workoutLogs, user } from '../mock'
 import { EXERCISES, MUSCLES } from '../exerciseData.js'
 
-// DietPage와 동일하게 mock 데이터가 있는 날짜로 고정
 const MOCK_DATE = '2026-03-26'
 
 const CATEGORY_COLOR = {
-  strength:     'bg-blue-100 text-blue-600',
-  cardio:       'bg-green-100 text-green-600',
-  powerlifting: 'bg-orange-100 text-orange-600',
+  strength:     'bg-blue-500/20 text-blue-400',
+  cardio:       'bg-green-500/20 text-green-400',
+  powerlifting: 'bg-orange-500/20 text-orange-400',
 }
 
 const CATEGORY_LABEL = { strength: '웨이트', cardio: '유산소', powerlifting: '파워리프팅' }
 
 const CATEGORIES = ['전체', 'strength', 'cardio', 'powerlifting']
 
-// ── 칼로리 계산 (MET 공식) ────────────────────────────────────
-// 유산소:      MET × 체중(kg) × 시간(h)  — durationMin 직접 사용
-// 웨이트/맨몸: MET × 체중(kg) × 시간(h)  — 세트당 6분(운동+휴식) 추정
 const DEFAULT_MET = { cardio: 7.0, strength: 5.5, stretching: 3.0 }
 
 function calcCalories(exercise, inputs, weightKg) {
@@ -34,7 +29,6 @@ function calcCalories(exercise, inputs, weightKg) {
   }
 }
 
-// mock exerciseName → category 매핑
 const MOCK_EXERCISE_CATEGORY = {
   '벤치프레스':      'strength',
   '오버헤드프레스':  'strength',
@@ -47,9 +41,6 @@ const MOCK_EXERCISE_CATEGORY = {
   '줄넘기':         'cardio',
 }
 
-// workoutLogs(mock) → WorkoutPage 내부 로그 형식으로 변환
-// WorkoutCard는 log.exercise.{name, category, primaryMuscles}를 사용하므로
-// mock의 exerciseName 문자열로부터 stub 객체를 생성한다
 function initLogs() {
   return workoutLogs
     .filter((w) => w.date === MOCK_DATE)
@@ -71,18 +62,15 @@ function initLogs() {
 }
 
 export default function WorkoutPage() {
-  const navigate = useNavigate()
-
   const [logs, setLogs]                         = useState(initLogs)
   const [isModalOpen, setIsModalOpen]           = useState(false)
   const [categoryFilter, setCategoryFilter]     = useState('전체')
   const [query, setQuery]                       = useState('')
-  const [selectedExercise, setSelectedExercise] = useState(null) // null=STEP1, 값=STEP2
+  const [selectedExercise, setSelectedExercise] = useState(null)
   const [formInputs, setFormInputs]             = useState({ sets: '', reps: '', weightKg: '', durationMin: '', distanceKm: '' })
   const [formError, setFormError]               = useState('')
-  const [previewExercise, setPreviewExercise]   = useState(null) // 미리보기 바텀시트
+  const [previewExercise, setPreviewExercise]   = useState(null)
 
-  // ── 파생 상태 ────────────────────────────────────────────────
   const filteredExercises = useMemo(() => {
     const q = query.trim().toLowerCase()
     let list = EXERCISES
@@ -91,24 +79,14 @@ export default function WorkoutPage() {
     return list.filter((e) => e.name.toLowerCase().includes(q))
   }, [query, categoryFilter])
 
-  const totalBurned = useMemo(
-    () => logs.reduce((s, l) => s + l.caloriesBurned, 0),
-    [logs]
-  )
-  const totalSets = useMemo(
-    () => logs.filter((l) => l.sets).reduce((s, l) => s + l.sets, 0),
-    [logs]
-  )
-  const totalCardioMin = useMemo(
-    () => logs.filter((l) => l.exercise.category === 'cardio').reduce((s, l) => s + (l.durationMin ?? 0), 0),
-    [logs]
-  )
+  const totalBurned    = useMemo(() => logs.reduce((s, l) => s + l.caloriesBurned, 0), [logs])
+  const totalSets      = useMemo(() => logs.filter((l) => l.sets).reduce((s, l) => s + l.sets, 0), [logs])
+  const totalCardioMin = useMemo(() => logs.filter((l) => l.exercise.category === 'cardio').reduce((s, l) => s + (l.durationMin ?? 0), 0), [logs])
   const caloriePreview = useMemo(() => {
     if (!selectedExercise) return null
     return calcCalories(selectedExercise, formInputs, user.weight)
   }, [selectedExercise, formInputs])
 
-  // ── 이벤트 핸들러 ────────────────────────────────────────────
   const handleSelectExercise = (ex) => {
     setSelectedExercise(ex)
     setFormInputs({ sets: '', reps: '', weightKg: '', durationMin: '', distanceKm: '' })
@@ -117,20 +95,15 @@ export default function WorkoutPage() {
 
   const handleAddWorkout = () => {
     if (!selectedExercise) return
-
     if (selectedExercise.category === 'cardio') {
       const min = parseFloat(formInputs.durationMin)
-      if (isNaN(min) || min <= 0) {
-        setFormError('운동 시간을 입력해주세요')
-        return
-      }
+      if (isNaN(min) || min <= 0) { setFormError('운동 시간을 입력해주세요'); return }
     } else {
       const sets = parseFloat(formInputs.sets)
       const reps = parseFloat(formInputs.reps)
       if (isNaN(sets) || sets <= 0) { setFormError('세트 수를 입력해주세요'); return }
       if (isNaN(reps) || reps <= 0) { setFormError('렙 수를 입력해주세요'); return }
     }
-
     const calories = calcCalories(selectedExercise, formInputs, user.weight) ?? 0
     const newLog = {
       id:            Date.now(),
@@ -160,44 +133,37 @@ export default function WorkoutPage() {
   const isCardio = selectedExercise?.category === 'cardio'
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-48">
+    <div className="min-h-screen bg-[#0D1B2A] flex flex-col">
 
-      {/* ── 헤더 ─────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/')}
-            className="text-gray-500 hover:text-gray-700 transition"
-            aria-label="뒤로가기"
-          >
-            ←
-          </button>
-          <h1 className="text-base font-bold text-gray-800">운동 기록</h1>
+      {/* 헤더 */}
+      <div className="bg-[#0D1B2A] border-b border-white/10 px-6 pt-8 pb-4 sticky top-0 z-10 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-white">운동 기록</h1>
+          <p className="text-gray-400 text-xs mt-0.5">{MOCK_DATE}</p>
         </div>
-        <span className="text-xs text-gray-400">{MOCK_DATE}</span>
       </div>
 
-      <div className="px-4 pt-4 space-y-3">
+      <div className="flex-1 px-5 pt-4 pb-4 space-y-3">
 
-        {/* ── 요약 칩 ─────────────────────────────────────────── */}
+        {/* 요약 칩 */}
         <div className="grid grid-cols-3 gap-2">
           {[
-            { label: '운동 수',    value: `${logs.length}개` },
-            { label: '총 세트',   value: `${totalSets}세트` },
-            { label: '유산소',    value: `${totalCardioMin}분` },
+            { label: '운동 수',  value: `${logs.length}개` },
+            { label: '총 세트', value: `${totalSets}세트` },
+            { label: '유산소',  value: `${totalCardioMin}분` },
           ].map((s) => (
-            <div key={s.label} className="bg-white rounded-xl border border-gray-100 p-3 text-center shadow-sm">
-              <p className="text-sm font-bold text-gray-800">{s.value}</p>
+            <div key={s.label} className="bg-[#132236] rounded-xl border border-white/10 p-3 text-center">
+              <p className="text-sm font-bold text-white">{s.value}</p>
               <p className="text-xs text-gray-400 mt-0.5">{s.label}</p>
             </div>
           ))}
         </div>
 
-        {/* ── 운동 카드 목록 ───────────────────────────────────── */}
+        {/* 운동 카드 목록 */}
         {logs.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center">
+          <div className="bg-[#132236] border border-white/10 rounded-xl p-10 text-center">
             <p className="text-gray-400 text-sm">아직 기록된 운동이 없어요</p>
-            <p className="text-gray-300 text-xs mt-1">아래 버튼으로 운동을 추가해보세요</p>
+            <p className="text-gray-600 text-xs mt-1">아래 버튼으로 운동을 추가해보세요</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -206,43 +172,40 @@ export default function WorkoutPage() {
             ))}
           </div>
         )}
-
       </div>
 
-      {/* ── 하단 고정 바 ─────────────────────────────────────── */}
-      <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4 shadow-lg">
+      {/* 하단 고정 바 */}
+      <div className="sticky bottom-0 bg-[#0D1B2A] border-t border-white/10 px-5 py-4">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-semibold text-gray-700">오늘 소모 칼로리</span>
+          <span className="text-sm font-semibold text-white">오늘 소모 칼로리</span>
           <div className="flex items-baseline gap-1">
-            <span className="text-lg font-bold text-green-600">{totalBurned.toLocaleString()}</span>
+            <span className="text-lg font-bold text-green-400">{totalBurned.toLocaleString()}</span>
             <span className="text-xs text-gray-400">kcal</span>
           </div>
         </div>
         <button
           onClick={() => setIsModalOpen(true)}
-          className="w-full py-3 rounded-xl bg-green-500 hover:bg-green-600 text-white text-sm font-semibold transition"
+          className="w-full py-3 rounded-xl bg-white text-[#0D1B2A] text-sm font-semibold transition hover:bg-gray-100"
         >
           + 운동 추가
         </button>
       </div>
 
-      {/* ── 모달 ─────────────────────────────────────────────── */}
+      {/* 모달 */}
       {isModalOpen && (
         <div
-          className="fixed inset-0 bg-black/40 flex items-end justify-center z-50 px-4 pb-6"
+          className="fixed inset-0 bg-black/60 flex items-end justify-center z-50 px-4 pb-6"
           onClick={(e) => { if (e.target === e.currentTarget) closeModal() }}
         >
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div className="w-full max-w-lg bg-[#132236] border border-white/10 rounded-2xl shadow-xl overflow-hidden">
 
             {/* STEP 1 — 운동 검색 */}
             {!selectedExercise && (
               <>
                 <div className="flex items-center justify-between px-5 pt-5 pb-3">
-                  <h3 className="text-base font-bold text-gray-800">운동 추가</h3>
-                  <button onClick={closeModal} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+                  <h3 className="text-base font-bold text-white">운동 추가</h3>
+                  <button onClick={closeModal} className="text-gray-400 hover:text-white text-lg leading-none transition">×</button>
                 </div>
-
-                {/* 검색창 */}
                 <div className="px-5 mb-3">
                   <input
                     type="text"
@@ -250,11 +213,9 @@ export default function WorkoutPage() {
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="운동 이름으로 검색"
                     autoFocus
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-300 text-sm outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#1A2B3C] border border-white/10 text-white text-sm placeholder:text-gray-500 outline-none focus:border-green-500/60 transition"
                   />
                 </div>
-
-                {/* 카테고리 탭 */}
                 <div className="flex gap-2 px-5 mb-3 overflow-x-auto">
                   {CATEGORIES.map((cat) => (
                     <button
@@ -262,37 +223,35 @@ export default function WorkoutPage() {
                       onClick={() => setCategoryFilter(cat)}
                       className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
                         categoryFilter === cat
-                          ? 'bg-green-500 text-white border-green-500'
-                          : 'bg-white text-gray-500 border-gray-200 hover:border-green-300'
+                          ? 'bg-green-500/20 text-green-400 border-green-500/40'
+                          : 'bg-white/5 text-gray-400 border-white/10 hover:border-white/20'
                       }`}
                     >
                       {cat === '전체' ? '전체' : (CATEGORY_LABEL[cat] ?? cat)}
                     </button>
                   ))}
                 </div>
-
-                {/* 운동 목록 */}
                 <div className="overflow-y-auto max-h-72 px-5 pb-5 space-y-1">
                   {filteredExercises.length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-6">검색 결과가 없어요</p>
+                    <p className="text-sm text-gray-500 text-center py-6">검색 결과가 없어요</p>
                   ) : (
                     filteredExercises.map((ex) => (
                       <div key={ex.id} className="flex items-center">
                         <button
                           onClick={() => handleSelectExercise(ex)}
-                          className="flex-1 flex items-center justify-between px-4 py-3 rounded-xl hover:bg-gray-50 transition text-left"
+                          className="flex-1 flex items-center justify-between px-4 py-3 rounded-xl bg-[#1A2B3C] hover:bg-white/5 transition text-left"
                         >
                           <div className="flex items-center gap-2.5">
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_COLOR[ex.category]}`}>
                               {CATEGORY_LABEL[ex.category] ?? ex.category}
                             </span>
-                            <span className="text-sm font-medium text-gray-800">{ex.name}</span>
+                            <span className="text-sm font-medium text-white">{ex.name}</span>
                           </div>
-                          <span className="text-xs text-gray-400 shrink-0 ml-2">{ex.primaryMuscles?.[0] ?? ''}</span>
+                          <span className="text-xs text-gray-500 shrink-0 ml-2">{ex.primaryMuscles?.[0] ?? ''}</span>
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setPreviewExercise(ex) }}
-                          className="shrink-0 w-7 h-7 mr-1 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-400 text-xs font-bold transition"
+                          className="shrink-0 w-7 h-7 mr-1 ml-1 rounded-full bg-white/10 hover:bg-white/20 text-gray-400 text-xs font-bold transition"
                           aria-label="운동 설명 보기"
                         >
                           ?
@@ -310,29 +269,24 @@ export default function WorkoutPage() {
                 <div className="flex items-center gap-3 px-5 pt-5 pb-3">
                   <button
                     onClick={() => { setSelectedExercise(null); setFormError('') }}
-                    className="text-gray-400 hover:text-gray-600 transition"
-                    aria-label="뒤로가기"
+                    className="text-gray-400 hover:text-white transition"
                   >
                     ←
                   </button>
-                  <h3 className="text-base font-bold text-gray-800 flex-1">세부 정보 입력</h3>
-                  <button onClick={closeModal} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+                  <h3 className="text-base font-bold text-white flex-1">세부 정보 입력</h3>
+                  <button onClick={closeModal} className="text-gray-400 hover:text-white text-lg leading-none transition">×</button>
                 </div>
-
-                {/* 선택된 운동 요약 */}
                 <div className="flex items-center gap-2 px-5 mb-4">
-                  <span className="text-sm font-semibold text-gray-800">{selectedExercise.name}</span>
+                  <span className="text-sm font-semibold text-white">{selectedExercise.name}</span>
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_COLOR[selectedExercise.category]}`}>
                     {CATEGORY_LABEL[selectedExercise.category] ?? selectedExercise.category}
                   </span>
-                  <span className="text-xs text-gray-400">{selectedExercise.primaryMuscles?.[0] ?? ''}</span>
+                  <span className="text-xs text-gray-500">{selectedExercise.primaryMuscles?.[0] ?? ''}</span>
                 </div>
-
                 <div className="px-5 pb-5 space-y-3">
                   {isCardio ? (
-                    /* 유산소 폼 */
                     <>
-                      <FormField label="시간 (분)" unit="분" required>
+                      <FormField label="시간 (분)" unit="분">
                         <input
                           type="number"
                           value={formInputs.durationMin}
@@ -357,9 +311,8 @@ export default function WorkoutPage() {
                       </FormField>
                     </>
                   ) : (
-                    /* 웨이트/맨몸 폼 */
                     <>
-                      <FormField label="세트 수" unit="세트" required>
+                      <FormField label="세트 수" unit="세트">
                         <input
                           type="number"
                           value={formInputs.sets}
@@ -370,7 +323,7 @@ export default function WorkoutPage() {
                           className={inputCls(formError && !formInputs.sets)}
                         />
                       </FormField>
-                      <FormField label="렙 수" unit="회" required>
+                      <FormField label="렙 수" unit="회">
                         <input
                           type="number"
                           value={formInputs.reps}
@@ -393,33 +346,27 @@ export default function WorkoutPage() {
                       </FormField>
                     </>
                   )}
-
-                  {/* 에러 메시지 */}
-                  {formError && <p className="text-xs text-red-500">{formError}</p>}
-
-                  {/* 예상 칼로리 미리보기 */}
+                  {formError && <p className="text-xs text-red-400">{formError}</p>}
                   {caloriePreview !== null && (
-                    <div className="bg-green-50 rounded-xl px-4 py-3 flex items-center justify-between">
-                      <span className="text-xs text-green-700 font-medium">예상 소모 칼로리</span>
-                      <span className="text-sm font-bold text-green-600">~{caloriePreview} kcal</span>
+                    <div className="bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3 flex items-center justify-between">
+                      <span className="text-xs text-green-400 font-medium">예상 소모 칼로리</span>
+                      <span className="text-sm font-bold text-green-400">~{caloriePreview} kcal</span>
                     </div>
                   )}
-
                   <button
                     onClick={handleAddWorkout}
-                    className="w-full py-3 rounded-xl bg-green-500 hover:bg-green-600 text-white text-sm font-semibold transition mt-1"
+                    className="w-full py-3 rounded-xl bg-white text-[#0D1B2A] text-sm font-semibold transition mt-1 hover:bg-gray-100"
                   >
                     운동 기록 추가
                   </button>
                 </div>
               </>
             )}
-
           </div>
         </div>
       )}
 
-      {/* ── 운동 미리보기 바텀시트 ───────────────────────────── */}
+      {/* 운동 미리보기 바텀시트 */}
       {previewExercise && (
         <ExercisePreviewSheet
           exercise={previewExercise}
@@ -434,8 +381,6 @@ export default function WorkoutPage() {
   )
 }
 
-// ── 로컬 컴포넌트 ─────────────────────────────────────────────
-
 function WorkoutCard({ log, onDelete }) {
   const { exercise: ex, sets, reps, weightKg, durationMin, distanceKm, caloriesBurned } = log
 
@@ -444,37 +389,36 @@ function WorkoutCard({ log, onDelete }) {
     : [sets && reps && `${sets}세트 × ${reps}회`, weightKg > 0 && `${weightKg}kg`].filter(Boolean).join(' · ')
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-4">
+    <div className="bg-[#132236] rounded-xl border border-white/10 px-4 py-4">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2 mb-1.5">
-          <span className="text-sm font-semibold text-gray-800">{ex.name}</span>
+          <span className="text-sm font-semibold text-white">{ex.name}</span>
           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_COLOR[ex.category]}`}>
             {CATEGORY_LABEL[ex.category] ?? ex.category}
           </span>
         </div>
         <button
           onClick={() => onDelete(log.id)}
-          className="text-gray-300 hover:text-red-400 transition text-lg leading-none ml-2"
-          aria-label="삭제"
+          className="text-gray-600 hover:text-red-400 transition text-lg leading-none ml-2"
         >
           ×
         </button>
       </div>
       <p className="text-xs text-gray-500 mb-2">{ex.primaryMuscles?.[0] ?? '—'}</p>
       <div className="flex items-center justify-between">
-        <span className="text-sm text-gray-700">{detailText || '—'}</span>
-        <span className="text-sm font-semibold text-green-600">-{caloriesBurned} kcal</span>
+        <span className="text-sm text-gray-300">{detailText || '—'}</span>
+        <span className="text-sm font-semibold text-green-400">-{caloriesBurned} kcal</span>
       </div>
     </div>
   )
 }
 
-function FormField({ label, unit, hint, required, children }) {
+function FormField({ label, unit, hint, children }) {
   return (
     <div>
       <div className="flex items-center gap-1.5 mb-1.5">
-        <label className="text-xs font-semibold text-gray-600">{label}</label>
-        {hint && <span className="text-xs text-gray-400">({hint})</span>}
+        <label className="text-xs font-semibold text-gray-400">{label}</label>
+        {hint && <span className="text-xs text-gray-600">({hint})</span>}
       </div>
       <div className="relative">
         {children}
@@ -488,33 +432,29 @@ function FormField({ label, unit, hint, required, children }) {
 
 function inputCls(hasError) {
   return [
-    'w-full px-4 py-2.5 pr-12 rounded-xl border text-sm font-medium outline-none transition',
+    'w-full px-4 py-2.5 pr-12 rounded-xl border text-white text-sm font-medium outline-none transition bg-[#1A2B3C] placeholder:text-gray-600',
     hasError
-      ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-100'
-      : 'border-gray-300 focus:border-green-500 focus:ring-2 focus:ring-green-100',
+      ? 'border-red-500/50 focus:border-red-400'
+      : 'border-white/10 focus:border-green-500/60',
   ].join(' ')
 }
 
 function ExercisePreviewSheet({ exercise, onClose, onSelect }) {
   return (
     <div
-      className="fixed inset-0 bg-black/40 flex items-end justify-center z-[60] px-4 pb-6"
+      className="fixed inset-0 bg-black/60 flex items-end justify-center z-[60] px-4 pb-6"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl p-5 space-y-4">
-
-        {/* 헤더 */}
+      <div className="w-full max-w-lg bg-[#132236] border border-white/10 rounded-2xl shadow-xl p-5 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_COLOR[exercise.category]}`}>
               {CATEGORY_LABEL[exercise.category] ?? exercise.category}
             </span>
-            <h3 className="text-base font-bold text-gray-800">{exercise.name}</h3>
+            <h3 className="text-base font-bold text-white">{exercise.name}</h3>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-lg leading-none transition">×</button>
         </div>
-
-        {/* 이미지 */}
         {exercise.images?.[0] ? (
           <img
             src={`https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/${exercise.images[0]}`}
@@ -522,25 +462,21 @@ function ExercisePreviewSheet({ exercise, onClose, onSelect }) {
             className="w-full rounded-xl object-cover max-h-52"
           />
         ) : (
-          <div className="w-full h-40 bg-gray-100 rounded-xl flex items-center justify-center">
-            <span className="text-sm text-gray-400">동작 이미지 준비 중</span>
+          <div className="w-full h-40 bg-[#1A2B3C] rounded-xl flex items-center justify-center">
+            <span className="text-sm text-gray-500">동작 이미지 준비 중</span>
           </div>
         )}
-
-        {/* 운동 정보 */}
         <div className="space-y-1">
           <p className="text-xs text-gray-500">
-            타겟 근육: <span className="font-medium text-gray-700">{exercise.primaryMuscles?.join(', ') ?? '—'}</span>
+            타겟 근육: <span className="font-medium text-gray-300">{exercise.primaryMuscles?.join(', ') ?? '—'}</span>
           </p>
           {exercise.instructions && (
-            <p className="text-sm text-gray-600">{exercise.instructions}</p>
+            <p className="text-sm text-gray-400">{exercise.instructions}</p>
           )}
         </div>
-
-        {/* 선택 버튼 */}
         <button
           onClick={onSelect}
-          className="w-full py-3 rounded-xl bg-green-500 hover:bg-green-600 text-white text-sm font-semibold transition"
+          className="w-full py-3 rounded-xl bg-white text-[#0D1B2A] text-sm font-semibold transition hover:bg-gray-100"
         >
           이 운동으로 기록하기
         </button>
