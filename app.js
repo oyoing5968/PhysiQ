@@ -4,13 +4,18 @@ const cors = require('cors');
 
 const sequelize = require('./config/database');
 const authRouter = require('./routes/auth');
-
+const userRouter = require('./routes/user');
+const goalRouter = require('./routes/goal');
+const dietRouter = require('./routes/diet');
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json()); 
 
 app.use('/api/auth', authRouter);
+app.use('/api/user', userRouter);
+app.use('/api/goal', goalRouter);
+app.use('/api/diet', dietRouter);
 
 app.get('/', (req, res) => {
   res.json({ message: 'PhysiQ 서버 정상 작동 중!' });
