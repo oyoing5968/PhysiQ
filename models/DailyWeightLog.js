@@ -1,8 +1,8 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
-const DietLog = sequelize.define('DietLog', {
-  log_id: {
+const DailyWeightLog = sequelize.define('DailyWeightLog', {
+  wlog_id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
     autoIncrement: true
@@ -11,29 +11,18 @@ const DietLog = sequelize.define('DietLog', {
     type: DataTypes.INTEGER,
     allowNull: false
   },
-  food_id: {
-    type: DataTypes.INTEGER,
-    allowNull: false
-  },
-  meal_type: {
-    type: DataTypes.ENUM('breakfast', 'lunch', 'dinner', 'snack'),
-    allowNull: false
-  },
-  amount_g: {
+  weight: {
     type: DataTypes.FLOAT,
     allowNull: false
   },
-  estimated_kcal: {
-    type: DataTypes.FLOAT
-  },
-  log_date: {
+  recorded_at: {
     type: DataTypes.DATEONLY,
     allowNull: false,
     defaultValue: DataTypes.NOW
   }
 }, {
-  tableName: 'diet_logs',
+  tableName: 'daily_weight_logs',
   timestamps: true
 });
 
-module.exports = DietLog;   
+module.exports = DailyWeightLog;

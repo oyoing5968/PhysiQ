@@ -7,6 +7,8 @@ const authRouter = require('./routes/auth');
 const userRouter = require('./routes/user');
 const goalRouter = require('./routes/goal');
 const dietRouter = require('./routes/diet');
+const weightRouter = require('./routes/weight');
+const analysisRouter = require('./routes/analysis');
 const app = express();
 
 app.use(cors());
@@ -16,12 +18,23 @@ app.use('/api/auth', authRouter);
 app.use('/api/user', userRouter);
 app.use('/api/goal', goalRouter);
 app.use('/api/diet', dietRouter);
-
+app.use('/api/weight', weightRouter);
+app.use('/api/analysis', analysisRouter);
 app.get('/', (req, res) => {
   res.json({ message: 'PhysiQ 서버 정상 작동 중!' });
 });
 
-sequelize.sync({ alter: true })
+// 모델 관계 설정
+const Food = require('./models/Food');
+const DietLog = require('./models/DietLog');
+const CustomMeal = require('./models/CustomMeal');
+const CustomMealFood = require('./models/CustomMealFood');
+
+DietLog.belongsTo(Food, { foreignKey: 'food_id' });
+CustomMealFood.belongsTo(Food, { foreignKey: 'food_id' });
+CustomMeal.hasMany(CustomMealFood, { foreignKey: 'custom_id' });
+
+sequelize.sync({ alter: false })
   .then(() => {
     console.log('DB 동기화 완료!');
     const PORT = process.env.PORT || 3000;

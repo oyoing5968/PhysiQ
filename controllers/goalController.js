@@ -64,3 +64,36 @@ exports.setGoal = async (req, res) => {
     res.status(500).json({ message: '서버 오류' });
   }
 };
+// 현재 목표 조회
+exports.getGoal = async (req, res) => {
+  try {
+    const user_id = req.user.user_id;
+
+    const goal = await Goal.findOne({
+      where: { user_id },
+      order: [['createdAt', 'DESC']]
+    });
+
+    if (!goal) {
+      return res.status(404).json({ message: '설정된 목표가 없습니다.' });
+    }
+
+    res.json({
+      message: '목표 조회 완료!',
+      data: {
+        goal_id: goal.goal_id,
+        goal_type: goal.goal_type,
+        target_weight: goal.target_weight,
+        tdee: goal.tdee,
+        daily_kcal: goal.daily_kcal,
+        protein_g: goal.protein_g,
+        carb_g: goal.carb_g,
+        fat_g: goal.fat_g,
+        start_date: goal.start_date
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류' });
+  }
+};

@@ -1,4 +1,5 @@
 require('dotenv').config();
+const User = require('../models/User');
 const UserStaticInfo = require('../models/UserStaticInfo');
 const UserDynamicInfo = require('../models/UserDynamicInfo');
 const UserLifestyle = require('../models/UserLifestyle');
@@ -43,6 +44,44 @@ exports.saveLifestyle = async (req, res) => {
       user_id, job_type, sleep_hours, meal_time_start, meal_time_end, workout_volume
     });
     res.status(201).json({ message: '라이프스타일 저장 완료!', data: lifestyle });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류' });
+  }
+};
+
+// 사용자 정보 조회 (마이페이지)
+exports.getUserInfo = async (req, res) => {
+  try {
+    const user_id = req.user.user_id;
+
+    const user = await User.findOne({
+      where: { user_id },
+      attributes: ['user_id', 'name', 'email', 'gender', 'birth_date', 'role']
+    });
+
+    const staticInfo = await UserStaticInfo.findOne({ where: { user_id } });
+
+    const dynamicInfo = await UserDynamicInfo.findOne({
+      where: { user_id },
+      order: [['createdAt', 'DESC']]
+    });
+
+    const lifestyle = await UserLifestyle.findOne({ where: { user_id } });
+
+    if (!user) {
+      return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+    }
+
+    res.json({
+      message: '사용자 정보 조회 완료!',
+      data: {
+        user,
+        static_info: staticInfo,
+        dynamic_info: dynamicInfo,
+        lifestyle
+      }
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: '서버 오류' });

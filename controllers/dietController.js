@@ -209,3 +209,84 @@ exports.saveCustomMeal = async (req, res) => {
     res.status(500).json({ message: '서버 오류' });
   }
 };
+// 오늘 식단 조회
+exports.getDietLogs = async (req, res) => {
+  try {
+    const user_id = req.user.user_id;
+    const { date } = req.query;
+    const targetDate = date || new Date().toISOString().split('T')[0];
+
+    const logs = await DietLog.findAll({
+      where: { user_id, log_date: targetDate },
+      include: [{
+        model: Food,
+        attributes: ['name', 'category', 'kcal', 'protein', 'carb', 'fat']
+      }],
+      order: [['meal_type', 'ASC']]
+    });
+
+    // 끼니별로 그룹핑
+    const grouped = {
+      breakfast: [],
+      lunch: [],
+      dinner: [],
+      snack: []
+    };
+
+    let totalKcal = 0;
+    let totalProtein = 0;
+    let totalCarb = 0;
+    let totalFat = 0;
+
+    logs.forEach(log => {
+      grouped[log.meal_type].push(log);
+      totalKcal += log.estimated_kcal;
+      totalProtein += (log.amount_g / 100) * log.Food.protein;
+      totalCarb += (log.amount_g / 100) * log.Food.carb;
+      totalFat += (log.amount_g / 100) * log.Food.fat;
+    });
+
+    res.json({
+      message: '식단 조회 완료!',
+      date: targetDate,
+      total_kcal: Math.round(totalKcal),
+      total_protein: Math.round(totalProtein),
+      total_carb: Math.round(totalCarb),
+      total_fat: Math.round(totalFat),
+      meals: grouped
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류' });
+  }
+};
+
+// 커스텀 식단 조회
+exports.getCustomMeals = async (req, res) => {
+  try {
+    const user_id = req.user.user_id;
+    const { date } = req.query;
+    const targetDate = date || new Date().toISOString().split('T')[0];
+
+    const meals = await CustomMeal.findAll({
+      where: { user_id, log_date: targetDate },
+      include: [{
+        model: CustomMealFood,
+        include: [{
+          model: Food,
+          attributes: ['name', 'category', 'kcal', 'protein', 'carb', 'fat']
+        }]
+      }],
+      order: [['meal_type', 'ASC']]
+    });
+
+    res.json({
+      message: '커스텀 식단 조회 완료!',
+      date: targetDate,
+      data: meals
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류' });
+  }
+};
