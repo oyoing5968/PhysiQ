@@ -1,5 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import * as userService from '../services/userService'
+import * as goalService from '../services/goalService'
+
+const GOAL_TYPE_MAP = {
+  lose_weight:  'diet',
+  cutting:      'cutting',
+  dirty_bulkup: 'dirty_bulk',
+  lean_massup:  'lean_mass',
+}
 
 const STEPS = [
   { title: '키를 입력해주세요',          desc: '정확한 추천을 위해 현재 키를\n입력해주세요',             icon: '📏', iconBg: 'bg-blue-500' },
@@ -18,6 +27,8 @@ const GOALS = [
 export default function Onboarding() {
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   const [data, setData] = useState({
     gender: '',
@@ -37,9 +48,29 @@ export default function Onboarding() {
   const update = (field, value) =>
     setData((prev) => ({ ...prev, [field]: value }))
 
-  const finish = () => {
-    localStorage.setItem('physiq_profile', JSON.stringify(data))
-    navigate('/', { replace: true })
+  const finish = async () => {
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      await userService.saveStaticInfo(Number(data.height))
+      await userService.saveDynamicInfo(
+        Number(data.weight),
+        data.bodyFat ? Number(data.bodyFat) : null,
+        data.skeletalMuscle ? Number(data.skeletalMuscle) : null
+      )
+      await userService.saveLifestyle({
+        job_type: 'office',
+        sleep_hours: 7,
+        meal_time_start: '08:00',
+        meal_time_end: '20:00',
+        workout_volume: 'medium',
+      })
+      await goalService.setGoal(GOAL_TYPE_MAP[data.goal] || 'diet', null)
+      navigate('/', { replace: true })
+    } catch (err) {
+      setSubmitError(err.message || '저장 중 오류가 발생했습니다.')
+      setSubmitting(false)
+    }
   }
 
   const goNext = () => (step < STEPS.length - 1 ? setStep((s) => s + 1) : finish())
@@ -115,15 +146,21 @@ export default function Onboarding() {
             건너뛰기
           </button>
         )}
+        {submitError && (
+          <p className="text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2 mb-2 text-center">
+            {submitError}
+          </p>
+        )}
         <button
           onClick={goNext}
+          disabled={submitting}
           className={`flex-1 py-4 rounded-xl text-sm font-semibold transition ${
-            hasInput(step, data)
+            hasInput(step, data) && !submitting
               ? 'bg-white text-[#0D1B2A]'
               : 'bg-white/20 text-gray-400 cursor-default'
           }`}
         >
-          {isLast ? '완료' : '다음'}
+          {isLast ? (submitting ? '저장 중...' : '완료') : '다음'}
         </button>
       </div>
     </div>

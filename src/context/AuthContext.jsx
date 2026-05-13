@@ -1,51 +1,45 @@
 import { createContext, useContext, useState } from 'react'
+import * as authService from '../services/authService'
+import * as userService from '../services/userService'
 
 const AuthContext = createContext(null)
 
-// btoa는 ASCII만 처리하므로 유니코드(한글 등)를 위해 encodeURIComponent 사용
-function b64encode(str) {
-  return btoa(unescape(encodeURIComponent(str)))
-}
-function b64decode(str) {
-  return decodeURIComponent(escape(atob(str)))
-}
-
-function makeToken(payload) {
-  const header = b64encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
-  const body   = b64encode(JSON.stringify({ ...payload, exp: Date.now() + 86400000 }))
-  const sig    = b64encode('mock-signature')
-  return `${header}.${body}.${sig}`
-}
-
-export function parseToken(token) {
-  try {
-    return JSON.parse(b64decode(token.split('.')[1]))
-  } catch {
-    return null
-  }
-}
-
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem('token'))
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('physiq_user') || 'null')
+    } catch {
+      return null
+    }
+  })
 
-  const login = (email, name) => {
-    const newToken = makeToken({ email, name })
+  const login = async (email, password) => {
+    const { token: newToken } = await authService.login(email, password)
     localStorage.setItem('token', newToken)
     setToken(newToken)
+
+    try {
+      const { data } = await userService.getUserInfo()
+      const userInfo = { name: data.user.name, email: data.user.email }
+      localStorage.setItem('physiq_user', JSON.stringify(userInfo))
+      setUser(userInfo)
+    } catch {
+      // 온보딩 전 유저는 info가 없을 수 있으므로 무시
+    }
   }
 
   const logout = () => {
     localStorage.removeItem('token')
+    localStorage.removeItem('physiq_user')
     setToken(null)
+    setUser(null)
   }
 
-  const isAuthenticated = !!token && (() => {
-    const payload = parseToken(token)
-    return payload && payload.exp > Date.now()
-  })()
+  const isAuthenticated = !!token
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ token, user, isAuthenticated, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

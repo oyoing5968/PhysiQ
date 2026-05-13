@@ -1,11 +1,16 @@
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth, parseToken } from '../context/AuthContext'
-import { user as mockUser, goal } from '../mock'
+import { useAuth } from '../context/AuthContext'
+import * as userService from '../services/userService'
+import * as goalService from '../services/goalService'
 
 const GOAL_LABEL = {
-  lose_weight:  '체중 감량',
-  gain_muscle:  '근육 증가',
-  maintain:     '체중 유지',
+  diet:       '다이어트',
+  cutting:    '컷팅',
+  dirty_bulk: '벌크업',
+  lean_mass:  '린매스업',
+  bulk:       '벌크',
+  recomp:     '리컴프',
 }
 
 const SETTINGS_SECTIONS = [
@@ -38,14 +43,31 @@ const SETTINGS_SECTIONS = [
 ]
 
 export default function ProfilePage() {
-  const { token, logout } = useAuth()
+  const { user: authUser, logout } = useAuth()
   const navigate = useNavigate()
 
-  const payload = parseToken(token)
-  const userName  = payload?.name  ?? mockUser.name
-  const userEmail = payload?.email ?? mockUser.email
+  const [userInfo, setUserInfo] = useState(null)
+  const [goalData, setGoalData] = useState(null)
 
-  const goalLabel = GOAL_LABEL[goal.goalType] ?? '목표 없음'
+  useEffect(() => {
+    const load = async () => {
+      const [userRes, goalRes] = await Promise.allSettled([
+        userService.getUserInfo(),
+        goalService.getGoal(),
+      ])
+      if (userRes.status === 'fulfilled') setUserInfo(userRes.value.data)
+      if (goalRes.status === 'fulfilled') setGoalData(goalRes.value.data)
+    }
+    load()
+  }, [])
+
+  const userName  = userInfo?.user?.name   ?? authUser?.name  ?? '사용자'
+  const userEmail = userInfo?.user?.email  ?? authUser?.email ?? ''
+  const height    = userInfo?.static_info?.height          ?? '—'
+  const weight    = userInfo?.dynamic_info?.weight         ?? '—'
+  const bodyFat   = userInfo?.dynamic_info?.body_fat_pct   ?? '—'
+  const goalLabel = GOAL_LABEL[goalData?.goal_type]        ?? '목표 없음'
+  const targetWeight = goalData?.target_weight ?? '—'
 
   const handleLogout = () => {
     logout()
@@ -96,9 +118,6 @@ export default function ProfilePage() {
                 <span className="flex items-center gap-1 bg-orange-500/20 text-orange-400 text-xs font-semibold px-3 py-1.5 rounded-full">
                   🔥 7일 연속
                 </span>
-                <span className="flex items-center gap-1 bg-white/10 text-gray-400 text-xs px-3 py-1.5 rounded-full">
-                  2025년 3월 가입
-                </span>
               </div>
             </div>
 
@@ -106,10 +125,10 @@ export default function ProfilePage() {
             <div className="bg-[#132236] border border-white/10 rounded-xl p-4">
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: '키',    value: `${mockUser.height}cm` },
-                  { label: '체중',  value: `${mockUser.weight}kg` },
-                  { label: '목표',  value: `${goal.targetWeight}kg` },
-                  { label: '체지방', value: `${mockUser.bodyFatRate}%` },
+                  { label: '키',    value: height !== '—' ? `${height}cm` : '—' },
+                  { label: '체중',  value: weight !== '—' ? `${weight}kg` : '—' },
+                  { label: '목표',  value: targetWeight !== '—' ? `${targetWeight}kg` : '—' },
+                  { label: '체지방', value: bodyFat !== '—' ? `${bodyFat}%` : '—' },
                 ].map((item) => (
                   <div key={item.label} className="bg-[#1A2B3C] rounded-xl p-3">
                     <p className="text-xs text-gray-400 mb-1">{item.label}</p>

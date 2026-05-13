@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   ResponsiveContainer,
   LineChart, Line,
@@ -6,28 +6,13 @@ import {
   XAxis, YAxis, Tooltip, Legend,
   ReferenceLine, CartesianGrid,
 } from 'recharts'
-import {
-  weightLogs,
-  bodyCompositionLogs,
-  dailyCalorieLogs,
-  goal,
-  workoutLogs,
-  user,
-} from '../mock'
+import * as weightService from '../services/weightService'
+import * as analysisService from '../services/analysisService'
+import * as goalService from '../services/goalService'
+import * as userService from '../services/userService'
 
 const PERIODS = ['1주', '1달', '3달']
 const PERIOD_DAYS = { '1주': 7, '1달': 30, '3달': 90 }
-
-const ACTIVITY_MULTIPLIER = {
-  '거의 안 함':  1.2,
-  '주 1-2회':   1.375,
-  '주 3-4회':   1.55,
-  '주 5회 이상': 1.725,
-}
-const GOAL_DELTA = {
-  diet: -400, cutting: -400,
-  dirty_bulkup: 400, lean_massup: 150, recomp: 0,
-}
 
 const BADGES = [
   { label: '7일 연속',  icon: '🔥', achieved: true  },
@@ -57,36 +42,53 @@ const CHART_TOOLTIP_STYLE = {
 export default function ProgressPage() {
   const [period, setPeriod] = useState('1달')
 
-  const targetCalories = useMemo(() => {
-    try {
-      const profile = JSON.parse(localStorage.getItem('physiq_profile') || 'null')
-      if (!profile) return goal.dailyCalories
-      const w = parseFloat(profile.weight) || 70
-      const h = parseFloat(profile.height) || 170
-      const bmr = 10 * w + 6.25 * h - 5 * 25 + 5
-      const multiplier = ACTIVITY_MULTIPLIER[profile.exerciseVolume] || 1.375
-      const tdee = Math.round(bmr * multiplier)
-      const delta = GOAL_DELTA[profile.goal] ?? 0
-      return Math.max(1200, tdee + delta)
-    } catch {
-      return goal.dailyCalories
+  const [weightLogs, setWeightLogs]     = useState([])
+  const [analysis, setAnalysis]         = useState(null)
+  const [goalData, setGoalData]         = useState(null)
+  const [userInfo, setUserInfo]         = useState(null)
+
+  useEffect(() => {
+    const load = async () => {
+      const [weightRes, analysisRes, goalRes, userRes] = await Promise.allSettled([
+        weightService.getWeightLogs(),
+        analysisService.getWeightAnalysis(),
+        goalService.getGoal(),
+        userService.getUserInfo(),
+      ])
+
+      if (weightRes.status === 'fulfilled') {
+        const logs = (weightRes.value.data ?? []).map((w) => ({
+          date:     w.recorded_at?.split('T')[0] ?? w.recorded_at,
+          weightKg: w.weight,
+        }))
+        setWeightLogs(logs)
+      }
+
+      if (analysisRes.status === 'fulfilled') {
+        setAnalysis(analysisRes.value.data)
+      }
+
+      if (goalRes.status === 'fulfilled') {
+        setGoalData(goalRes.value.data)
+      }
+
+      if (userRes.status === 'fulfilled') {
+        setUserInfo(userRes.value.data)
+      }
     }
+    load()
   }, [])
 
   const days = PERIOD_DAYS[period]
+  const xTickCount = days === 7 ? 7 : 6
 
-  const filteredWeight   = useMemo(() => weightLogs.slice(-days), [days])
-  const filteredBodyComp = useMemo(() => bodyCompositionLogs.slice(-days), [days])
-  const filteredCalorie  = useMemo(
-    () =>
-      dailyCalorieLogs.slice(-days).map((d) => ({
-        ...d,
-        rate: Math.round((d.calories / targetCalories) * 100),
-      })),
-    [days, targetCalories]
-  )
+  const filteredWeight = useMemo(() => {
+    if (!weightLogs.length) return []
+    return weightLogs.slice(-days)
+  }, [weightLogs, days])
 
   const weightDomain = useMemo(() => {
+    if (!filteredWeight.length) return ['auto', 'auto']
     const vals = filteredWeight.map((d) => d.weightKg)
     return [
       Math.floor(Math.min(...vals) * 2) / 2 - 0.5,
@@ -94,31 +96,19 @@ export default function ProgressPage() {
     ]
   }, [filteredWeight])
 
-  const xTickCount = days === 7 ? 7 : days === 30 ? 6 : 6
+  const latestWeight  = analysis?.current_weight ?? filteredWeight[filteredWeight.length - 1]?.weightKg ?? 0
+  const initialWeight = analysis?.start_weight   ?? filteredWeight[0]?.weightKg ?? 0
+  const weightChange  = analysis?.weight_change  ?? 0
+  const progressPct   = analysis?.progress_pct   ?? 0
+  const targetWeight  = goalData?.target_weight  ?? 0
+  const dailyCalories = goalData?.daily_kcal     ?? 0
+  const height        = userInfo?.static_info?.height ?? 0
+  const bmi           = height > 0 ? (latestWeight / ((height / 100) ** 2)).toFixed(1) : '—'
 
-  // 좌측 패널 / 하단 stats 계산
-  const latestWeight  = weightLogs[weightLogs.length - 1].weightKg
-  const initialWeight = weightLogs[0].weightKg
-  const weightLost    = +(initialWeight - latestWeight).toFixed(1)
-  const bmi           = (latestWeight / ((user.height / 100) ** 2)).toFixed(1)
-
-  const avgCalories = useMemo(
-    () => Math.round(filteredCalorie.reduce((s, d) => s + d.calories, 0) / filteredCalorie.length),
-    [filteredCalorie]
-  )
-  const periodLoss = useMemo(
-    () => +(filteredWeight[0].weightKg - filteredWeight[filteredWeight.length - 1].weightKg).toFixed(1),
-    [filteredWeight]
-  )
-  const workoutCount = useMemo(
-    () => workoutLogs.filter((w) => (new Date() - new Date(w.date)) / 86400000 <= days).length,
-    [days]
-  )
-
-  const progressPct = Math.min(
-    ((initialWeight - latestWeight) / (initialWeight - goal.targetWeight)) * 100,
-    100
-  )
+  const periodLoss = useMemo(() => {
+    if (!filteredWeight.length) return 0
+    return +(filteredWeight[0].weightKg - filteredWeight[filteredWeight.length - 1].weightKg).toFixed(1)
+  }, [filteredWeight])
 
   return (
     <div className="min-h-screen bg-[#0D1B2A]">
@@ -169,14 +159,14 @@ export default function ProgressPage() {
                   <span className="text-sm font-bold text-white">{latestWeight} kg</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">총 감량</span>
-                  <span className={`text-sm font-bold ${weightLost > 0 ? 'text-blue-400' : 'text-gray-400'}`}>
-                    {weightLost > 0 ? '-' : ''}{Math.abs(weightLost)} kg
+                  <span className="text-xs text-gray-400">총 변화</span>
+                  <span className={`text-sm font-bold ${weightChange < 0 ? 'text-blue-400' : weightChange > 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                    {weightChange > 0 ? '+' : ''}{weightChange} kg
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-400">목표 체중</span>
-                  <span className="text-sm font-bold text-gray-300">{goal.targetWeight} kg</span>
+                  <span className="text-sm font-bold text-gray-300">{targetWeight} kg</span>
                 </div>
               </div>
 
@@ -184,17 +174,17 @@ export default function ProgressPage() {
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs">
                   <span className="text-gray-500">목표 달성률</span>
-                  <span className="text-blue-400 font-semibold">{Math.round(Math.max(progressPct, 0))}%</span>
+                  <span className="text-blue-400 font-semibold">{Math.max(progressPct, 0)}%</span>
                 </div>
                 <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                    style={{ width: `${Math.max(progressPct, 0)}%` }}
+                    style={{ width: `${Math.min(Math.max(progressPct, 0), 100)}%` }}
                   />
                 </div>
                 <div className="flex justify-between text-xs text-gray-600">
                   <span>{initialWeight} kg</span>
-                  <span>{goal.targetWeight} kg</span>
+                  <span>{targetWeight} kg</span>
                 </div>
               </div>
             </div>
@@ -223,143 +213,52 @@ export default function ProgressPage() {
 
             {/* 체중 변화 추이 */}
             <ChartCard title="체중 변화 추이" unit="kg">
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={filteredWeight} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e3a5f" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={formatTick}
-                    tick={{ fontSize: 11, fill: '#6b7280' }}
-                    interval={Math.floor(days / xTickCount)}
-                  />
-                  <YAxis
-                    domain={weightDomain}
-                    tick={{ fontSize: 11, fill: '#6b7280' }}
-                    tickFormatter={(v) => `${v}`}
-                    unit="kg"
-                  />
-                  <Tooltip
-                    labelFormatter={formatLabel}
-                    formatter={(v) => [`${v} kg`, '체중']}
-                    contentStyle={CHART_TOOLTIP_STYLE}
-                  />
-                  <Line
-                    dataKey="weightKg"
-                    stroke="#60a5fa"
-                    strokeWidth={2}
-                    dot={days <= 7 ? { r: 3, fill: '#60a5fa' } : false}
-                    activeDot={{ r: 4 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {filteredWeight.length > 0 ? (
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={filteredWeight} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e3a5f" />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={formatTick}
+                      tick={{ fontSize: 11, fill: '#6b7280' }}
+                      interval={Math.floor(filteredWeight.length / xTickCount)}
+                    />
+                    <YAxis
+                      domain={weightDomain}
+                      tick={{ fontSize: 11, fill: '#6b7280' }}
+                      tickFormatter={(v) => `${v}`}
+                      unit="kg"
+                    />
+                    <Tooltip
+                      labelFormatter={formatLabel}
+                      formatter={(v) => [`${v} kg`, '체중']}
+                      contentStyle={CHART_TOOLTIP_STYLE}
+                    />
+                    <Line
+                      dataKey="weightKg"
+                      stroke="#60a5fa"
+                      strokeWidth={2}
+                      dot={filteredWeight.length <= 7 ? { r: 3, fill: '#60a5fa' } : false}
+                      activeDot={{ r: 4 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <NoData />
+              )}
             </ChartCard>
 
             {/* 체지방률 + 골격근량 */}
             <ChartCard title="체지방률 / 골격근량">
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={filteredBodyComp} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e3a5f" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={formatTick}
-                    tick={{ fontSize: 11, fill: '#6b7280' }}
-                    interval={Math.floor(days / xTickCount)}
-                  />
-                  <YAxis
-                    yAxisId="fat"
-                    orientation="left"
-                    tick={{ fontSize: 11, fill: '#f87171' }}
-                    unit="%"
-                    domain={['auto', 'auto']}
-                  />
-                  <YAxis
-                    yAxisId="muscle"
-                    orientation="right"
-                    tick={{ fontSize: 11, fill: '#4ade80' }}
-                    unit="kg"
-                    domain={['auto', 'auto']}
-                  />
-                  <Tooltip
-                    labelFormatter={formatLabel}
-                    formatter={(v, name) =>
-                      name === 'bodyFatRate'
-                        ? [`${v}%`, '체지방률']
-                        : [`${v} kg`, '골격근량']
-                    }
-                    contentStyle={CHART_TOOLTIP_STYLE}
-                  />
-                  <Legend
-                    formatter={(val) => val === 'bodyFatRate' ? '체지방률' : '골격근량'}
-                    wrapperStyle={{ fontSize: 11, color: '#9ca3af' }}
-                  />
-                  <Line
-                    yAxisId="fat"
-                    dataKey="bodyFatRate"
-                    stroke="#f87171"
-                    strokeWidth={2}
-                    dot={days <= 7 ? { r: 3, fill: '#f87171' } : false}
-                    activeDot={{ r: 4 }}
-                  />
-                  <Line
-                    yAxisId="muscle"
-                    dataKey="skeletalMuscleMass"
-                    stroke="#4ade80"
-                    strokeWidth={2}
-                    dot={days <= 7 ? { r: 3, fill: '#4ade80' } : false}
-                    activeDot={{ r: 4 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <NoData message="인바디 기록을 추가하면 표시됩니다" />
             </ChartCard>
 
             {/* 칼로리 달성률 */}
             <ChartCard
               title="칼로리 달성률"
-              subtitle={`목표 ${targetCalories.toLocaleString()} kcal 기준`}
+              subtitle={`목표 ${dailyCalories.toLocaleString()} kcal 기준`}
             >
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={filteredCalorie} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e3a5f" vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={formatTick}
-                    tick={{ fontSize: 11, fill: '#6b7280' }}
-                    interval={Math.floor(days / xTickCount)}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: '#6b7280' }}
-                    unit="%"
-                    domain={[0, 150]}
-                  />
-                  <Tooltip
-                    labelFormatter={formatLabel}
-                    formatter={(v, _, props) => [
-                      `${v}% (${props.payload.calories} kcal)`,
-                      '달성률',
-                    ]}
-                    contentStyle={CHART_TOOLTIP_STYLE}
-                  />
-                  <ReferenceLine
-                    y={100}
-                    stroke="#4b5563"
-                    strokeDasharray="4 4"
-                    label={{ value: '목표', position: 'right', fontSize: 10, fill: '#6b7280' }}
-                  />
-                  <Bar dataKey="rate" radius={[2, 2, 0, 0]} maxBarSize={20}>
-                    {filteredCalorie.map((entry, i) => (
-                      <Cell
-                        key={i}
-                        fill={entry.rate >= 100 ? '#f87171' : '#60a5fa'}
-                        fillOpacity={0.85}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <div className="flex gap-4 mt-2 justify-center">
-                <LegendDot color="bg-blue-400"  label="목표 미달" />
-                <LegendDot color="bg-red-400"   label="목표 초과" />
-              </div>
+              <NoData message="식단을 기록하면 달성률이 표시됩니다" />
             </ChartCard>
           </div>
         </div>
@@ -368,21 +267,21 @@ export default function ProgressPage() {
         <div className="grid grid-cols-4 gap-4">
           <StatCard
             label="평균 칼로리"
-            value={`${avgCalories.toLocaleString()}`}
+            value="—"
             unit="kcal"
             color="text-orange-400"
             icon="🔥"
           />
           <StatCard
             label="기간 감량"
-            value={periodLoss > 0 ? `-${periodLoss}` : `+${Math.abs(periodLoss)}`}
-            unit="kg"
-            color={periodLoss > 0 ? 'text-blue-400' : 'text-red-400'}
+            value={periodLoss > 0 ? `-${periodLoss}` : periodLoss < 0 ? `+${Math.abs(periodLoss)}` : '—'}
+            unit={periodLoss !== 0 ? 'kg' : ''}
+            color={periodLoss > 0 ? 'text-blue-400' : periodLoss < 0 ? 'text-red-400' : 'text-gray-400'}
             icon="⚖️"
           />
           <StatCard
             label="운동 횟수"
-            value={`${workoutCount}`}
+            value="—"
             unit="회"
             color="text-green-400"
             icon="💪"
@@ -400,6 +299,14 @@ export default function ProgressPage() {
   )
 }
 
+function NoData({ message = '데이터가 없습니다' }) {
+  return (
+    <div className="h-[200px] flex items-center justify-center">
+      <p className="text-sm text-gray-600">{message}</p>
+    </div>
+  )
+}
+
 function ChartCard({ title, subtitle, unit, children }) {
   return (
     <div className="bg-[#132236] rounded-xl border border-white/10 p-5">
@@ -411,15 +318,6 @@ function ChartCard({ title, subtitle, unit, children }) {
         {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
       </div>
       {children}
-    </div>
-  )
-}
-
-function LegendDot({ color, label }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className={`w-2.5 h-2.5 rounded-full ${color}`} />
-      <span className="text-xs text-gray-400">{label}</span>
     </div>
   )
 }

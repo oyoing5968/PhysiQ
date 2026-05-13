@@ -1,17 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { parseToken } from '../context/AuthContext'
-import {
-  user,
-  goal,
-  mealLogs,
-  workoutLogs,
-  weightLogs,
-  foods,
-} from '../mock'
+import * as userService from '../services/userService'
+import * as goalService from '../services/goalService'
+import * as dietService from '../services/dietService'
+import * as weightService from '../services/weightService'
 
-const MOCK_DATE = '2026-03-26'
 const TODAY = new Date().toISOString().split('T')[0]
 
 const MEAL_LABEL = {
@@ -52,7 +46,7 @@ function RingProgress({ pct, size = 140, stroke = 12, color = '#3b82f6', childre
 }
 
 function MacroBar({ label, current, goal: g, color }) {
-  const pct = Math.min((current / g) * 100, 100)
+  const pct = g > 0 ? Math.min((current / g) * 100, 100) : 0
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between text-xs">
@@ -70,92 +64,117 @@ function MacroBar({ label, current, goal: g, color }) {
 }
 
 export default function HomePage() {
-  const { token } = useAuth()
+  const { user: authUser } = useAuth()
   const navigate = useNavigate()
 
-  const payload  = parseToken(token)
-  const userName = payload?.name ?? user.name
-
-  const initialTodayWeight = weightLogs.find((w) => w.date === TODAY)?.weightKg ?? null
-  const [todayWeight,     setTodayWeight]     = useState(initialTodayWeight)
+  // 사용자 정보
+  const [userInfo, setUserInfo] = useState(null)
+  // 목표
+  const [goalData, setGoalData] = useState(null)
+  // 오늘 식단 (API 응답 meals 객체)
+  const [mealGroups, setMealGroups] = useState({ breakfast: [], lunch: [], dinner: [], snack: [] })
+  const [totalCaloriesEaten, setTotalCaloriesEaten] = useState(0)
+  const [macros, setMacros] = useState({ protein: 0, carbs: 0, fat: 0 })
+  // 체중
+  const [weightLogs, setWeightLogs] = useState([])
+  const [todayWeight, setTodayWeight]   = useState(null)
   const [showWeightModal, setShowWeightModal] = useState(false)
-  const [weightInput,     setWeightInput]     = useState('')
-  const [weightError,     setWeightError]     = useState('')
+  const [weightInput, setWeightInput]   = useState('')
+  const [weightError, setWeightError]   = useState('')
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [infoRes, goalRes, dietRes, weightRes] = await Promise.allSettled([
+          userService.getUserInfo(),
+          goalService.getGoal(),
+          dietService.getDietLogs(TODAY),
+          weightService.getWeightLogs(),
+        ])
+
+        if (infoRes.status === 'fulfilled') {
+          setUserInfo(infoRes.value.data)
+        }
+
+        if (goalRes.status === 'fulfilled') {
+          setGoalData(goalRes.value.data)
+        }
+
+        if (dietRes.status === 'fulfilled') {
+          const d = dietRes.value
+          // meals: { breakfast: [...], lunch: [...], ... }
+          // 각 항목: { Food: { name }, estimated_kcal, amount_g }
+          const normalizedGroups = {}
+          for (const type of ['breakfast', 'lunch', 'dinner', 'snack']) {
+            normalizedGroups[type] = (d.meals?.[type] || []).map((log) => ({
+              foodName: log.Food?.name ?? '알 수 없음',
+              calories: log.estimated_kcal ?? 0,
+            }))
+          }
+          setMealGroups(normalizedGroups)
+          setTotalCaloriesEaten(d.total_kcal ?? 0)
+          setMacros({
+            protein: d.total_protein ?? 0,
+            carbs:   d.total_carb   ?? 0,
+            fat:     d.total_fat    ?? 0,
+          })
+        }
+
+        if (weightRes.status === 'fulfilled') {
+          const logs = weightRes.value.data ?? []
+          setWeightLogs(logs)
+          const todayLog = logs.find((w) => w.recorded_at?.startsWith(TODAY))
+          if (todayLog) setTodayWeight(todayLog.weight)
+        }
+      } catch {
+        // 개별 에러는 allSettled로 처리
+      }
+    }
+    load()
+  }, [])
 
   const yesterdayWeight = useMemo(() => {
     const yesterday = new Date(TODAY)
     yesterday.setDate(yesterday.getDate() - 1)
     const yStr = yesterday.toISOString().split('T')[0]
-    return weightLogs.find((w) => w.date === yStr)?.weightKg
-      ?? weightLogs[weightLogs.length - 1]?.weightKg
-      ?? null
-  }, [])
+    const log = weightLogs.find((w) => w.recorded_at?.startsWith(yStr))
+    return log?.weight ?? weightLogs[weightLogs.length - 1]?.weight ?? null
+  }, [weightLogs])
 
   const weightDiff = todayWeight != null && yesterdayWeight != null
     ? (todayWeight - yesterdayWeight).toFixed(1)
     : null
 
-  const handleWeightSave = () => {
+  const handleWeightSave = async () => {
     const val = parseFloat(weightInput)
     if (isNaN(val) || val < 20 || val > 300) {
       setWeightError('올바른 체중을 입력해주세요 (20–300 kg)')
       return
     }
-    setTodayWeight(val)
-    setShowWeightModal(false)
-    setWeightInput('')
-    setWeightError('')
+    try {
+      await weightService.saveWeight(val, TODAY)
+      setTodayWeight(val)
+      setShowWeightModal(false)
+      setWeightInput('')
+      setWeightError('')
+    } catch (err) {
+      setWeightError(err.message || '저장 중 오류가 발생했습니다.')
+    }
   }
 
-  const todayMeals = useMemo(
-    () => mealLogs.filter((m) => m.date === MOCK_DATE),
-    []
-  )
-
-  const totalCaloriesEaten = useMemo(
-    () => todayMeals.reduce((s, m) => s + m.calories, 0),
-    [todayMeals]
-  )
-
-  const macros = useMemo(() => {
-    const foodMap = Object.fromEntries(foods.map((f) => [f.name, f]))
-    return todayMeals.reduce(
-      (acc, log) => {
-        const f = foodMap[log.foodName]
-        if (!f) return acc
-        const ratio = log.amount / f.servingSize
-        return {
-          protein: acc.protein + f.protein * ratio,
-          carbs:   acc.carbs   + f.carbs   * ratio,
-          fat:     acc.fat     + f.fat     * ratio,
-        }
-      },
-      { protein: 0, carbs: 0, fat: 0 }
-    )
-  }, [todayMeals])
-
-  const mealGroups = useMemo(() => {
-    const map = {}
-    for (const m of todayMeals) {
-      if (!map[m.mealType]) map[m.mealType] = []
-      map[m.mealType].push(m)
-    }
-    return map
-  }, [todayMeals])
-
-  const todayWorkouts = useMemo(
-    () => workoutLogs.filter((w) => w.date === MOCK_DATE),
-    []
-  )
-  const totalBurned = useMemo(
-    () => todayWorkouts.reduce((s, w) => s + w.caloriesBurned, 0),
-    [todayWorkouts]
-  )
-
-  const displayWeight = todayWeight ?? weightLogs[weightLogs.length - 1]?.weightKg ?? user.weight
-  const bmi           = (displayWeight / ((user.height / 100) ** 2)).toFixed(1)
-  const caloriePct    = totalCaloriesEaten / goal.dailyCalories
-  const netCalories   = goal.dailyCalories - totalCaloriesEaten + totalBurned
+  const userName    = authUser?.name ?? userInfo?.user?.name ?? '사용자'
+  const height      = userInfo?.static_info?.height ?? 0
+  const weight      = todayWeight ?? userInfo?.dynamic_info?.weight ?? 0
+  const bodyFatRate = userInfo?.dynamic_info?.body_fat_pct ?? 0
+  const muscleMass  = userInfo?.dynamic_info?.muscle_mass ?? 0
+  const targetWeight = goalData?.target_weight ?? 0
+  const dailyCalories = goalData?.daily_kcal ?? 2000
+  const proteinGoal  = goalData?.protein_g ?? 0
+  const carbGoal     = goalData?.carb_g ?? 0
+  const fatGoal      = goalData?.fat_g ?? 0
+  const bmi          = height > 0 ? (weight / ((height / 100) ** 2)).toFixed(1) : '—'
+  const caloriePct   = dailyCalories > 0 ? totalCaloriesEaten / dailyCalories : 0
+  const netCalories  = dailyCalories - totalCaloriesEaten
 
   return (
     <div className="min-h-screen bg-[#0D1B2A]">
@@ -209,11 +228,11 @@ export default function HomePage() {
                 )}
               </div>
             )}
-            <p className="text-gray-500 text-xs mb-3">목표 {goal.targetWeight}kg · {Math.abs(displayWeight - goal.targetWeight).toFixed(1)}kg 남음</p>
+            <p className="text-gray-500 text-xs mb-3">목표 {targetWeight}kg · {Math.abs(weight - targetWeight).toFixed(1)}kg 남음</p>
             <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
               <div
                 className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(((displayWeight - goal.targetWeight) / (user.weight - goal.targetWeight)) * 100, 100)}%` }}
+                style={{ width: `${targetWeight > 0 ? Math.min(((weight - targetWeight) / Math.abs(weight - targetWeight + 0.01)) * 100, 100) : 0}%` }}
               />
             </div>
           </div>
@@ -228,7 +247,7 @@ export default function HomePage() {
               <span className="text-xl font-bold text-white">
                 {totalCaloriesEaten.toLocaleString()}
               </span>
-              <span className="text-xs text-gray-400">/ {goal.dailyCalories}</span>
+              <span className="text-xs text-gray-400">/ {dailyCalories}</span>
             </RingProgress>
             <p className="text-xs text-gray-500 mt-3">kcal</p>
           </div>
@@ -237,9 +256,9 @@ export default function HomePage() {
           <div className="bg-[#132236] rounded-xl border border-white/10 p-5">
             <p className="text-gray-400 text-xs mb-4">영양소 목표</p>
             <div className="space-y-3">
-              <MacroBar label="단백질"   current={Math.round(macros.protein)} goal={goal.protein} color="bg-blue-500" />
-              <MacroBar label="탄수화물" current={Math.round(macros.carbs)}   goal={goal.carbs}   color="bg-green-500" />
-              <MacroBar label="지방"     current={Math.round(macros.fat)}     goal={goal.fat}     color="bg-orange-400" />
+              <MacroBar label="단백질"   current={Math.round(macros.protein)} goal={proteinGoal} color="bg-blue-500" />
+              <MacroBar label="탄수화물" current={Math.round(macros.carbs)}   goal={carbGoal}    color="bg-green-500" />
+              <MacroBar label="지방"     current={Math.round(macros.fat)}     goal={fatGoal}     color="bg-orange-400" />
             </div>
           </div>
         </div>
@@ -257,15 +276,15 @@ export default function HomePage() {
               </div>
               <div className="bg-[#1A2B3C] rounded-xl p-3">
                 <p className="text-xs text-gray-400 mb-1">체지방률</p>
-                <p className="text-xl font-bold text-orange-400">{user.bodyFatRate}%</p>
+                <p className="text-xl font-bold text-orange-400">{bodyFatRate}%</p>
               </div>
               <div className="bg-[#1A2B3C] rounded-xl p-3">
                 <p className="text-xs text-gray-400 mb-1">골격근량</p>
-                <p className="text-xl font-bold text-white">{user.skeletalMuscleMass} kg</p>
+                <p className="text-xl font-bold text-white">{muscleMass} kg</p>
               </div>
               <div className="bg-[#1A2B3C] rounded-xl p-3">
                 <p className="text-xs text-gray-400 mb-1">키</p>
-                <p className="text-xl font-bold text-white">{user.height} cm</p>
+                <p className="text-xl font-bold text-white">{height} cm</p>
               </div>
             </div>
           </div>
@@ -275,8 +294,8 @@ export default function HomePage() {
             <p className="text-gray-400 text-xs mb-4">칼로리 요약</p>
             <div className="space-y-3">
               <CalorieRow label="섭취"   value={totalCaloriesEaten} color="text-blue-400" />
-              <CalorieRow label="소모"   value={totalBurned}        color="text-green-400" />
-              <CalorieRow label="목표"   value={goal.dailyCalories} color="text-gray-500" />
+              <CalorieRow label="소모"   value={0}                  color="text-green-400" />
+              <CalorieRow label="목표"   value={dailyCalories}      color="text-gray-500" />
               <div className="border-t border-white/10 pt-3">
                 <CalorieRow
                   label="남은 칼로리"
@@ -338,7 +357,7 @@ export default function HomePage() {
           <div className="space-y-3">
             {['breakfast', 'lunch', 'dinner', 'snack'].map((type) => {
               const items = mealGroups[type]
-              if (!items) return null
+              if (!items || items.length === 0) return null
               const total = items.reduce((s, m) => s + m.calories, 0)
               return (
                 <div key={type} className="flex items-start gap-3">
@@ -354,6 +373,9 @@ export default function HomePage() {
                 </div>
               )
             })}
+            {Object.values(mealGroups).every((g) => g.length === 0) && (
+              <p className="text-sm text-gray-500 text-center py-4">오늘 식단 기록이 없어요</p>
+            )}
           </div>
         </div>
 
@@ -363,7 +385,7 @@ export default function HomePage() {
             <p className="text-gray-400 text-xs">오늘의 운동</p>
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-green-400 bg-green-500/20 px-2.5 py-1 rounded-full">
-                -{totalBurned} kcal
+                -0 kcal
               </span>
               <button
                 onClick={() => navigate('/workout')}
@@ -373,41 +395,7 @@ export default function HomePage() {
               </button>
             </div>
           </div>
-
-          {todayWorkouts.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-4">오늘 운동 기록이 없어요</p>
-          ) : (
-            <div className="space-y-2">
-              {todayWorkouts.map((w) => (
-                <div key={w.id} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
-                  <div>
-                    <p className="text-sm font-medium text-white">{w.exerciseName}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {w.sets && w.reps
-                        ? `${w.sets}세트 × ${w.reps}회${w.weightKg ? ` · ${w.weightKg}kg` : ''}`
-                        : `${w.durationMin}분`}
-                    </p>
-                  </div>
-                  <span className="text-xs text-green-400 font-medium">-{w.caloriesBurned} kcal</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {todayWorkouts.length > 0 && (
-            <div className="grid grid-cols-3 gap-2 mt-4">
-              {[
-                { label: '운동 수', value: `${todayWorkouts.length}개` },
-                { label: '총 세트', value: `${todayWorkouts.filter(w => w.sets).reduce((s, w) => s + w.sets, 0)}세트` },
-                { label: '유산소',  value: `${todayWorkouts.filter(w => w.durationMin).reduce((s, w) => s + w.durationMin, 0)}분` },
-              ].map((stat) => (
-                <div key={stat.label} className="bg-[#1A2B3C] rounded-xl p-3 text-center">
-                  <p className="text-sm font-semibold text-white">{stat.value}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{stat.label}</p>
-                </div>
-              ))}
-            </div>
-          )}
+          <p className="text-sm text-gray-500 text-center py-4">오늘 운동 기록이 없어요</p>
         </div>
 
       </div>

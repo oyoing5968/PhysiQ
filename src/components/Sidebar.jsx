@@ -1,6 +1,7 @@
+import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { useAuth, parseToken } from '../context/AuthContext'
-import { goal } from '../mock'
+import { useAuth } from '../context/AuthContext'
+import * as goalService from '../services/goalService'
 
 const NAV_ITEMS = [
   { path: '/',         label: '홈',       icon: '🏠' },
@@ -11,15 +12,24 @@ const NAV_ITEMS = [
 ]
 
 const GOAL_LABEL = {
-  lose_weight:  '다이어트 목표',
-  gain_muscle:  '근육 증가 목표',
-  maintain:     '체중 유지 목표',
+  diet:       '다이어트 목표',
+  cutting:    '컷팅 목표',
+  dirty_bulk: '벌크업 목표',
+  lean_mass:  '린매스업 목표',
+  bulk:       '벌크 목표',
+  recomp:     '리컴프 목표',
 }
 
 export default function Sidebar() {
-  const { token, logout } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const user = parseToken(token)
+  const [goalType, setGoalType] = useState(null)
+
+  useEffect(() => {
+    goalService.getGoal()
+      .then((res) => setGoalType(res.data?.goal_type ?? null))
+      .catch(() => {})
+  }, [])
 
   const handleLogout = () => {
     logout()
@@ -67,7 +77,7 @@ export default function Sidebar() {
               {user?.name ?? '사용자'}
             </p>
             <p className="text-gray-400 text-xs truncate">
-              {GOAL_LABEL[goal?.goalType] ?? '목표 없음'}
+              {GOAL_LABEL[goalType] ?? '목표 없음'}
             </p>
           </div>
           <button

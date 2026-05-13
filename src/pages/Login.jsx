@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { user as mockUser } from '../mock'
 
 export default function Login() {
   const { login, isAuthenticated } = useAuth()
@@ -26,12 +25,9 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     try {
-      await new Promise((r) => setTimeout(r, 600))
-      if (form.email === mockUser.email && form.password === '1234') {
-        login(mockUser.email, mockUser.name)
-      } else {
-        setError('이메일 또는 비밀번호가 올바르지 않습니다.')
-      }
+      await login(form.email, form.password)
+    } catch (err) {
+      setError(err.message || '이메일 또는 비밀번호가 올바르지 않습니다.')
     } finally {
       setLoading(false)
     }
@@ -107,10 +103,6 @@ export default function Login() {
           </Link>
         </p>
 
-        {/* 테스트 계정 */}
-        <p className="text-center text-xs text-gray-600 mt-4">
-          테스트 계정 : {mockUser.email} / 1234
-        </p>
       </div>
     </div>
   )

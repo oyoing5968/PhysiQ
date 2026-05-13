@@ -1,6 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { foods } from '../mock'
+import * as dietService from '../services/dietService'
+import * as goalService from '../services/goalService'
+
+const TODAY = new Date().toISOString().split('T')[0]
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
 const MEAL_LABEL = { breakfast: '아침', lunch: '점심', dinner: '저녁', snack: '간식' }
@@ -12,22 +15,14 @@ const MEAL_COLOR = {
   snack:     { badge: 'bg-purple-500/20 text-purple-400', border: 'border-l-purple-500/40' },
 }
 
-const ACTIVITY_MULTIPLIER = {
-  '거의 안 함':  1.2,
-  '주 1-2회':   1.375,
-  '주 3-4회':   1.55,
-  '주 5회 이상': 1.725,
+const GOAL_LABEL = {
+  diet:        '다이어트',
+  cutting:     '컷팅',
+  dirty_bulk:  '벌크업',
+  lean_mass:   '린매스업',
+  bulk:        '벌크',
+  recomp:      '리컴프',
 }
-
-const GOAL_CONFIG = {
-  diet:         { label: '다이어트',  delta: -400, ratio: { carbs: 0.40, protein: 0.35, fat: 0.25 } },
-  cutting:      { label: '다이어트',  delta: -400, ratio: { carbs: 0.40, protein: 0.35, fat: 0.25 } },
-  dirty_bulkup: { label: '벌크업',    delta: +400, ratio: { carbs: 0.50, protein: 0.30, fat: 0.20 } },
-  lean_massup:  { label: '린매스업',  delta: +150, ratio: { carbs: 0.45, protein: 0.30, fat: 0.25 } },
-  recomp:       { label: '체형 개선', delta:    0, ratio: { carbs: 0.40, protein: 0.35, fat: 0.25 } },
-}
-
-const MEAL_CALORIE_RATIO = { breakfast: 0.25, lunch: 0.35, dinner: 0.30, snack: 0.10 }
 
 const CARDIO = [
   { name: '러닝 (트레드밀)', duration: '30분', calories: 300, desc: '중간 강도' },
@@ -41,130 +36,107 @@ const STRENGTH = [
   { name: '데드리프트', info: '3세트 × 8회',  calories: 180, desc: '등/허리' },
 ]
 
-function groupByCategory(foodList) {
-  return foodList.reduce((acc, food) => {
-    if (!acc[food.category]) acc[food.category] = []
-    acc[food.category].push(food)
-    return acc
-  }, {})
-}
-
-function randomPick(arr) {
-  return arr[Math.floor(Math.random() * arr.length)]
-}
-
-function buildMealPlan(targetCalories) {
-  const byCategory = groupByCategory(foods)
+function normalizeRecommendation(apiRecommendations) {
+  const plan = {}
   let counter = Date.now()
-
-  const makeEntry = (mealType, food, targetCal) => {
-    const amount = Math.max(10, Math.round((targetCal / food.calories) * food.servingSize))
-    const ratio  = amount / food.servingSize
-    return {
+  for (const mealType of MEAL_TYPES) {
+    const group = apiRecommendations?.[mealType]?.foods ?? []
+    plan[mealType] = group.map((f) => ({
       id:       counter++,
       mealType,
-      food,
-      amount,
-      calories: Math.round(food.calories * ratio),
-      protein:  Math.round(food.protein  * ratio * 10) / 10,
-      carbs:    Math.round(food.carbs    * ratio * 10) / 10,
-      fat:      Math.round(food.fat      * ratio * 10) / 10,
-    }
+      food_id:  f.food_id,
+      food: {
+        name:        f.name,
+        category:    f.category,
+        servingSize: 100,
+        calories:    f.kcal_per_100g ?? 0,
+      },
+      amount:   f.recommended_g,
+      calories: f.estimated_kcal,
+      protein:  f.protein,
+      carbs:    f.carb,
+      fat:      f.fat,
+    }))
   }
-
-  const plan = {}
-  MEAL_TYPES.forEach((mealType) => {
-    const mealCal = Math.round(targetCalories * MEAL_CALORIE_RATIO[mealType])
-
-    if (mealType === 'snack') {
-      const pool = [...(byCategory['과일'] || []), ...(byCategory['보충제'] || [])]
-      plan[mealType] = [makeEntry(mealType, randomPick(pool), mealCal)]
-      return
-    }
-
-    const proteinFood = randomPick(byCategory['단백질'] || [])
-    const carbFood    = randomPick(byCategory['탄수화물'] || [])
-    const extraPool   = mealType === 'breakfast'
-      ? [...(byCategory['과일'] || []), ...(byCategory['채소'] || [])]
-      : [...(byCategory['채소'] || []), ...(byCategory['과일'] || [])]
-
-    plan[mealType] = [
-      makeEntry(mealType, proteinFood, mealCal * 0.40),
-      makeEntry(mealType, carbFood,    mealCal * 0.45),
-      makeEntry(mealType, randomPick(extraPool), mealCal * 0.15),
-    ]
-  })
-
   return plan
 }
 
 export default function RecommendPage() {
   const navigate = useNavigate()
 
-  const profile = useMemo(() => {
+  const [plan, setPlan]         = useState(null)
+  const [goalData, setGoalData] = useState(null)
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState('')
+  const [adding, setAdding]     = useState({})
+
+  const loadData = async () => {
+    setLoading(true)
+    setError('')
     try {
-      return JSON.parse(localStorage.getItem('physiq_profile') || 'null')
-    } catch {
-      return null
+      const [recRes, goalRes] = await Promise.allSettled([
+        dietService.recommendDiet(),
+        goalService.getGoal(),
+      ])
+
+      if (recRes.status === 'fulfilled') {
+        setPlan(normalizeRecommendation(recRes.value.recommendations))
+      } else {
+        setError(recRes.reason?.message || '추천 식단을 불러오지 못했습니다.')
+      }
+
+      if (goalRes.status === 'fulfilled') {
+        setGoalData(goalRes.value.data)
+      }
+    } finally {
+      setLoading(false)
     }
-  }, [])
-
-  const { tdee, targetCalories, targetProtein, targetCarbs, targetFat, goalLabel } = useMemo(() => {
-    const fallback = { tdee: 2000, targetCalories: 1600, targetProtein: 140, targetCarbs: 160, targetFat: 44, goalLabel: '다이어트' }
-    if (!profile) return fallback
-
-    const w = parseFloat(profile.weight) || 70
-    const h = parseFloat(profile.height) || 170
-
-    const age = (() => {
-      if (!profile.birthDate) return 25
-      const today = new Date()
-      const birth = new Date(profile.birthDate)
-      let a = today.getFullYear() - birth.getFullYear()
-      const m = today.getMonth() - birth.getMonth()
-      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) a--
-      return Math.max(10, Math.min(a, 120))
-    })()
-
-    const genderOffset = profile.gender === 'female' ? -161 : 5
-    const bmr = 10 * w + 6.25 * h - 5 * age + genderOffset
-    const multiplier = ACTIVITY_MULTIPLIER[profile.exerciseVolume] || 1.375
-    const tdee = Math.round(bmr * multiplier)
-
-    const config = GOAL_CONFIG[profile.goal] || GOAL_CONFIG['diet']
-    const targetCal = Math.max(1200, tdee + config.delta)
-
-    return {
-      tdee,
-      targetCalories: targetCal,
-      targetProtein:  Math.round((targetCal * config.ratio.protein) / 4),
-      targetCarbs:    Math.round((targetCal * config.ratio.carbs)   / 4),
-      targetFat:      Math.round((targetCal * config.ratio.fat)     / 9),
-      goalLabel:      config.label,
-    }
-  }, [profile])
-
-  const [plan, setPlan] = useState(() => buildMealPlan(targetCalories))
-
-  const handleRegenerate = () => setPlan(buildMealPlan(targetCalories))
-
-  const handleAddMeal = (mealType) => {
-    let existing = []
-    try { existing = JSON.parse(localStorage.getItem('physiq_today_meals') || '[]') } catch { /* noop */ }
-
-    const merged = [
-      ...existing.filter((item) => item.mealType !== mealType),
-      ...plan[mealType],
-    ]
-    localStorage.setItem('physiq_today_meals', JSON.stringify(merged))
-    navigate('/diet')
   }
 
-  if (!profile) {
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const handleRegenerate = () => loadData()
+
+  const handleAddMeal = async (mealType) => {
+    if (!plan?.[mealType]?.length) return
+    setAdding((prev) => ({ ...prev, [mealType]: true }))
+    try {
+      const foods = plan[mealType].map((item) => ({
+        food_id:       item.food_id,
+        amount_g:      item.amount,
+        estimated_kcal: item.calories,
+      }))
+      await dietService.saveDietLog(mealType, foods, TODAY)
+      navigate('/diet')
+    } catch (err) {
+      alert(err.message || '식단 추가에 실패했습니다.')
+    } finally {
+      setAdding((prev) => ({ ...prev, [mealType]: false }))
+    }
+  }
+
+  const tdee           = goalData?.tdee        ?? 0
+  const targetCalories = goalData?.daily_kcal  ?? 0
+  const targetProtein  = goalData?.protein_g   ?? 0
+  const targetCarbs    = goalData?.carb_g      ?? 0
+  const targetFat      = goalData?.fat_g       ?? 0
+  const goalLabel      = GOAL_LABEL[goalData?.goal_type] ?? '목표 없음'
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0D1B2A] flex items-center justify-center">
+        <p className="text-gray-400 text-sm">추천 식단을 불러오는 중...</p>
+      </div>
+    )
+  }
+
+  if (error) {
     return (
       <div className="min-h-screen bg-[#0D1B2A] flex flex-col items-center justify-center px-6 gap-4">
         <p className="text-gray-400 text-center text-sm leading-relaxed">
-          프로필이 없어요.<br />먼저 온보딩을 완료해주세요.
+          {error}<br />먼저 목표를 설정해주세요.
         </p>
         <button
           onClick={() => navigate('/onboarding')}
@@ -219,7 +191,7 @@ export default function RecommendPage() {
           {/* 아침 / 점심 / 저녁: 3열 */}
           <div className="grid grid-cols-3 gap-4 mb-4">
             {['breakfast', 'lunch', 'dinner'].map((mealType) => {
-              const items      = plan[mealType]
+              const items      = plan?.[mealType] ?? []
               const colors     = MEAL_COLOR[mealType]
               const totalCal   = items.reduce((s, i) => s + i.calories, 0)
               const totProtein = Math.round(items.reduce((s, i) => s + i.protein, 0) * 10) / 10
@@ -255,9 +227,10 @@ export default function RecommendPage() {
                     </div>
                     <button
                       onClick={() => handleAddMeal(mealType)}
-                      className="w-full py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white text-xs font-medium transition"
+                      disabled={adding[mealType]}
+                      className="w-full py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white text-xs font-medium transition disabled:opacity-50"
                     >
-                      오늘 식단에 추가
+                      {adding[mealType] ? '추가 중...' : '오늘 식단에 추가'}
                     </button>
                   </div>
                 </div>
@@ -268,7 +241,7 @@ export default function RecommendPage() {
           {/* 간식: 전체 너비 */}
           {(() => {
             const mealType  = 'snack'
-            const items     = plan[mealType]
+            const items     = plan?.[mealType] ?? []
             const colors    = MEAL_COLOR[mealType]
             const totalCal  = items.reduce((s, i) => s + i.calories, 0)
             return (
@@ -297,9 +270,10 @@ export default function RecommendPage() {
                 <div className="px-4 pb-4 pt-2">
                   <button
                     onClick={() => handleAddMeal(mealType)}
-                    className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white text-sm font-medium transition"
+                    disabled={adding[mealType]}
+                    className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white text-sm font-medium transition disabled:opacity-50"
                   >
-                    오늘 식단에 추가
+                    {adding[mealType] ? '추가 중...' : '오늘 식단에 추가'}
                   </button>
                 </div>
               </div>
@@ -352,8 +326,8 @@ export default function RecommendPage() {
 
         {/* 전체 추가 CTA */}
         <button
-          onClick={() => {
-            MEAL_TYPES.forEach((t) => handleAddMeal(t))
+          onClick={async () => {
+            for (const t of MEAL_TYPES) await handleAddMeal(t)
           }}
           className="w-full py-4 rounded-xl bg-white text-[#0D1B2A] font-semibold text-sm transition hover:bg-gray-100"
         >

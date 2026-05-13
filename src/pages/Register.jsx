@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import * as authService from '../services/authService'
 
 const GENDER_OPTIONS = [
   { value: 'male',   label: '남성' },
@@ -28,6 +29,7 @@ export default function Register() {
     gender: 'male',
   })
   const [errors, setErrors]   = useState({})
+  const [serverError, setServerError] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleChange = (e) => {
@@ -54,10 +56,14 @@ export default function Register() {
       return
     }
     setLoading(true)
+    setServerError('')
     try {
-      await new Promise((r) => setTimeout(r, 600))
+      const gender = form.gender === 'male' ? 'M' : 'F'
+      await authService.register(form.email, form.password, form.name, gender, form.birthDate)
       justRegistered.current = true
-      login(form.email, form.name)
+      await login(form.email, form.password)
+    } catch (err) {
+      setServerError(err.message || '회원가입에 실패했습니다.')
     } finally {
       setLoading(false)
     }
@@ -164,6 +170,12 @@ export default function Register() {
               ))}
             </div>
           </div>
+
+          {serverError && (
+            <p className="text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2">
+              {serverError}
+            </p>
+          )}
 
           <button
             type="submit"

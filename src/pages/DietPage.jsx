@@ -1,8 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { foods, mealLogs, goal, workoutLogs } from '../mock'
+import { foods } from '../mock'
+import * as dietService from '../services/dietService'
+import * as goalService from '../services/goalService'
 
-const MOCK_DATE = '2026-03-26'
+const TODAY = new Date().toISOString().split('T')[0]
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
 const MEAL_LABEL = { breakfast: '아침', lunch: '점심', dinner: '저녁', snack: '간식' }
@@ -14,44 +16,30 @@ const MEAL_COLOR = {
   snack:     { border: 'border-purple-500/40', badge: 'bg-purple-500/20 text-purple-400', btn: 'text-purple-400 border-purple-500/30 hover:bg-purple-500/10' },
 }
 
-function initLogs() {
-  const foodMap = Object.fromEntries(foods.map((f) => [f.name, f]))
-  const mockLogs = mealLogs
-    .filter((m) => m.date === MOCK_DATE)
-    .map((m, i) => {
-      const food = foodMap[m.foodName]
-      if (!food) return null
-      const ratio = m.amount / food.servingSize
-      return {
-        id: i + 1,
-        mealType: m.mealType,
-        food,
-        amount: m.amount,
-        calories: Math.round(food.calories * ratio),
-        protein:  Math.round(food.protein  * ratio * 10) / 10,
-        carbs:    Math.round(food.carbs    * ratio * 10) / 10,
-        fat:      Math.round(food.fat      * ratio * 10) / 10,
-      }
-    })
-    .filter(Boolean)
-
-  let recommendedLogs = []
-  try {
-    const raw = localStorage.getItem('physiq_today_meals')
-    if (raw) recommendedLogs = JSON.parse(raw)
-  } catch { /* noop */ }
-
-  if (recommendedLogs.length === 0) return mockLogs
-
-  const recommendedTypes = new Set(recommendedLogs.map((l) => l.mealType))
-  return [
-    ...mockLogs.filter((l) => !recommendedTypes.has(l.mealType)),
-    ...recommendedLogs,
-  ]
+function normalizeDietLog(log) {
+  const protein = Math.round((log.amount_g / 100) * (log.Food?.protein ?? 0) * 10) / 10
+  const carbs   = Math.round((log.amount_g / 100) * (log.Food?.carb   ?? 0) * 10) / 10
+  const fat     = Math.round((log.amount_g / 100) * (log.Food?.fat    ?? 0) * 10) / 10
+  return {
+    id:       log.log_id ?? log.id ?? Date.now(),
+    mealType: log.meal_type,
+    food: {
+      name:        log.Food?.name     ?? '알 수 없음',
+      brand:       null,
+      servingSize: 100,
+      calories:    log.Food?.kcal     ?? 0,
+      category:    log.Food?.category ?? '',
+    },
+    amount:   log.amount_g,
+    calories: log.estimated_kcal ?? 0,
+    protein,
+    carbs,
+    fat,
+  }
 }
 
 function MacroBar({ label, current, goal: g, color }) {
-  const pct = Math.min((current / g) * 100, 100)
+  const pct = g > 0 ? Math.min((current / g) * 100, 100) : 0
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between text-xs">
@@ -71,13 +59,43 @@ function MacroBar({ label, current, goal: g, color }) {
 export default function DietPage() {
   const navigate = useNavigate()
 
-  const [logs, setLogs] = useState(initLogs)
+  const [logs, setLogs]       = useState([])
+  const [goalData, setGoalData] = useState(null)
 
   const [activeMealType, setActiveMealType] = useState(null)
   const [query,          setQuery]          = useState('')
   const [selectedFood,   setSelectedFood]   = useState(null)
   const [amountInput,    setAmountInput]    = useState('')
   const [amountError,    setAmountError]    = useState('')
+
+  useEffect(() => {
+    const load = async () => {
+      const [dietRes, goalRes] = await Promise.allSettled([
+        dietService.getDietLogs(TODAY),
+        goalService.getGoal(),
+      ])
+
+      if (dietRes.status === 'fulfilled') {
+        const d = dietRes.value
+        const allLogs = []
+        for (const type of MEAL_TYPES) {
+          const group = d.meals?.[type] ?? []
+          group.forEach((log) => allLogs.push(normalizeDietLog({ ...log, meal_type: type })))
+        }
+        setLogs(allLogs)
+      }
+
+      if (goalRes.status === 'fulfilled') {
+        setGoalData(goalRes.value.data)
+      }
+    }
+    load()
+  }, [])
+
+  const dailyCalories = goalData?.daily_kcal  ?? 2000
+  const proteinGoal   = goalData?.protein_g   ?? 0
+  const carbGoal      = goalData?.carb_g      ?? 0
+  const fatGoal       = goalData?.fat_g       ?? 0
 
   const isModalOpen  = activeMealType !== null
   const isAmountStep = selectedFood !== null
@@ -135,17 +153,12 @@ export default function DietPage() {
   }, [logs])
 
   const totalCalories = useMemo(() => logs.reduce((s, l) => s + l.calories, 0), [logs])
-  const caloriePct    = Math.min(totalCalories / goal.dailyCalories, 1)
+  const caloriePct    = dailyCalories > 0 ? Math.min(totalCalories / dailyCalories, 1) : 0
 
   const totalMacros = useMemo(() => logs.reduce(
     (acc, l) => ({ protein: acc.protein + l.protein, carbs: acc.carbs + l.carbs, fat: acc.fat + l.fat }),
     { protein: 0, carbs: 0, fat: 0 }
   ), [logs])
-
-  const todayWorkouts = useMemo(
-    () => workoutLogs.filter((w) => w.date === MOCK_DATE),
-    []
-  )
 
   const preview = useMemo(() => {
     if (!selectedFood) return null
@@ -168,7 +181,7 @@ export default function DietPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-white">오늘의 기록</h1>
-            <p className="text-gray-400 text-xs mt-0.5">{MOCK_DATE}</p>
+            <p className="text-gray-400 text-xs mt-0.5">{TODAY}</p>
           </div>
           <button
             onClick={() => setActiveMealType('breakfast')}
@@ -190,12 +203,12 @@ export default function DietPage() {
             <p className="text-gray-400 text-xs mb-3">칼로리 요약</p>
             <div className="flex items-baseline gap-1 mb-1">
               <span className="text-3xl font-bold text-white">{totalCalories.toLocaleString()}</span>
-              <span className="text-gray-400 text-sm">/ {goal.dailyCalories.toLocaleString()} kcal</span>
+              <span className="text-gray-400 text-sm">/ {dailyCalories.toLocaleString()} kcal</span>
             </div>
-            <p className={`text-xs font-medium mb-3 ${goal.dailyCalories - totalCalories >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
-              {goal.dailyCalories - totalCalories >= 0
-                ? `${(goal.dailyCalories - totalCalories).toLocaleString()} kcal 남음`
-                : `${Math.abs(goal.dailyCalories - totalCalories).toLocaleString()} kcal 초과`
+            <p className={`text-xs font-medium mb-3 ${dailyCalories - totalCalories >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
+              {dailyCalories - totalCalories >= 0
+                ? `${(dailyCalories - totalCalories).toLocaleString()} kcal 남음`
+                : `${Math.abs(dailyCalories - totalCalories).toLocaleString()} kcal 초과`
               }
             </p>
             <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
@@ -206,7 +219,7 @@ export default function DietPage() {
             </div>
             <div className="flex justify-between text-xs text-gray-500 mt-1.5">
               <span>{Math.round(caloriePct * 100)}% 달성</span>
-              <span>목표 {goal.dailyCalories.toLocaleString()} kcal</span>
+              <span>목표 {dailyCalories.toLocaleString()} kcal</span>
             </div>
           </div>
 
@@ -214,9 +227,9 @@ export default function DietPage() {
           <div className="bg-[#132236] rounded-xl border border-white/10 p-4">
             <p className="text-gray-400 text-xs mb-3">영양소</p>
             <div className="space-y-3">
-              <MacroBar label="단백질"   current={totalMacros.protein} goal={goal.protein} color="bg-blue-500" />
-              <MacroBar label="탄수화물" current={totalMacros.carbs}   goal={goal.carbs}   color="bg-green-500" />
-              <MacroBar label="지방"     current={totalMacros.fat}     goal={goal.fat}     color="bg-orange-400" />
+              <MacroBar label="단백질"   current={totalMacros.protein} goal={proteinGoal} color="bg-blue-500" />
+              <MacroBar label="탄수화물" current={totalMacros.carbs}   goal={carbGoal}    color="bg-green-500" />
+              <MacroBar label="지방"     current={totalMacros.fat}     goal={fatGoal}     color="bg-orange-400" />
             </div>
           </div>
 
@@ -319,23 +332,7 @@ export default function DietPage() {
                 기록하기 →
               </button>
             </div>
-            {todayWorkouts.length === 0 ? (
-              <p className="text-sm text-gray-600 text-center py-4">오늘 운동 기록이 없어요</p>
-            ) : (
-              <div className="flex gap-3 overflow-x-auto pb-1">
-                {todayWorkouts.map((w) => (
-                  <div key={w.id} className="bg-[#1A2B3C] rounded-xl p-3 shrink-0 min-w-[140px]">
-                    <p className="text-sm font-medium text-white mb-1">{w.exerciseName}</p>
-                    <p className="text-xs text-gray-400">
-                      {w.sets && w.reps
-                        ? `${w.sets}세트 × ${w.reps}회${w.weightKg ? ` · ${w.weightKg}kg` : ''}`
-                        : `${w.durationMin}분`}
-                    </p>
-                    <p className="text-xs text-green-400 font-medium mt-1.5">-{w.caloriesBurned} kcal</p>
-                  </div>
-                ))}
-              </div>
-            )}
+            <p className="text-sm text-gray-600 text-center py-4">오늘 운동 기록이 없어요</p>
           </div>
         </div>
       </div>
