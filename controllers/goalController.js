@@ -97,3 +97,47 @@ exports.getGoal = async (req, res) => {
     res.status(500).json({ message: '서버 오류' });
   }
 };
+// 목표 수정
+exports.updateGoal = async (req, res) => {
+  try {
+    const user_id = req.user.user_id;
+    const { goal_type, target_weight } = req.body;
+
+    const goal = await Goal.findOne({
+      where: { user_id },
+      order: [['createdAt', 'DESC']]
+    });
+
+    if (!goal) {
+      return res.status(404).json({ message: '설정된 목표가 없습니다.' });
+    }
+
+    // 영양소 재계산
+    const { calculateGoalNutrition } = require('../utils/tdeeCalculator');
+    const { daily_kcal, protein_g, carb_g, fat_g } = calculateGoalNutrition(goal.tdee, goal_type);
+
+    await goal.update({
+      goal_type,
+      target_weight,
+      daily_kcal,
+      protein_g,
+      carb_g,
+      fat_g
+    });
+
+    res.json({
+      message: '목표 수정 완료!',
+      data: {
+        goal_type,
+        tdee: goal.tdee,
+        daily_kcal,
+        protein_g,
+        carb_g,
+        fat_g
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류' });
+  }
+};

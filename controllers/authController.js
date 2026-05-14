@@ -63,3 +63,24 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: '서버 오류' });
   }
 };
+// Refresh Token
+exports.refresh = async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(401).json({ message: '토큰이 없습니다.' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const newToken = jwt.sign(
+      { user_id: decoded.user_id, role: decoded.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({ message: '토큰 재발급 완료!', token: newToken });
+  } catch (err) {
+    return res.status(401).json({ message: '유효하지 않은 토큰입니다.' });
+  }
+};

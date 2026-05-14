@@ -16,9 +16,13 @@ const mealRatio = {
   snack: 0.10
 };
 
-const getRandomFoodByCategory = async (category) => {
+const getRandomFoodByCategory = async (category, restrictedCategories = []) => {
+  const where = { category };
+  if (restrictedCategories.includes(category)) {
+    return null; // 기피 카테고리면 null 반환
+  }
   const foods = await Food.findAll({
-    where: { category },
+    where: {category},
     order: Food.sequelize.literal('RAND()'),
     limit: 1
   });
@@ -37,7 +41,12 @@ exports.recommendDiet = async (req, res) => {
     if (!goal) {
       return res.status(400).json({ message: '목표를 먼저 설정해주세요.' });
     }
+    // 기피 음식 카테고리 조회
+    const FoodRestriction = require('../models/FoodRestriction');
+    const { Op } = require('sequelize');
 
+    const restrictions = await FoodRestriction.findAll({ where: { user_id } });
+    const restrictedCategories = restrictions.map(r => r.food_category);
     const recommendations = {};
     let totalEstimatedKcal = 0;
     let totalProtein = 0;
@@ -54,7 +63,7 @@ exports.recommendDiet = async (req, res) => {
       let mealEstimatedKcal = 0;
 
       for (const category of categories) {
-        const food = await getRandomFoodByCategory(category);
+        const food = await getRandomFoodByCategory(category, restrictedCategories);
         if (food) {
           // 목표 칼로리에 맞는 g 계산(300g 제한)
           const recommended_g = Math.min(300, Math.round((perFoodTargetKcal / food.kcal) * 100));
@@ -284,6 +293,33 @@ exports.getCustomMeals = async (req, res) => {
       message: '커스텀 식단 조회 완료!',
       date: targetDate,
       data: meals
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류' });
+  }
+};
+// 음식 검색
+exports.searchFood = async (req, res) => {
+  try {
+    const { keyword } = req.query;
+    const { Op } = require('sequelize');
+
+    if (!keyword) {
+      return res.status(400).json({ message: '검색어를 입력해주세요.' });
+    }
+
+    const foods = await Food.findAll({
+      where: {
+        name: { [Op.like]: `%${keyword}%` }
+      },
+      limit: 20
+    });
+
+    res.json({
+      message: '음식 검색 완료!',
+      count: foods.length,
+      data: foods
     });
   } catch (err) {
     console.error(err);

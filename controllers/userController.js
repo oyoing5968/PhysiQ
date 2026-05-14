@@ -87,3 +87,27 @@ exports.getUserInfo = async (req, res) => {
     res.status(500).json({ message: '서버 오류' });
   }
 };
+const FoodRestriction = require('../models/FoodRestriction');
+
+// 기피 음식 저장
+exports.saveFoodRestriction = async (req, res) => {
+  try {
+    const user_id = req.user.user_id;
+    const { food_categories } = req.body;
+    // food_categories: ['튀김류', '구이류']
+
+    // 기존 기피 음식 삭제 후 새로 저장
+    await FoodRestriction.destroy({ where: { user_id } });
+
+    const restrictions = await Promise.all(
+      food_categories.map(category =>
+        FoodRestriction.create({ user_id, food_category: category })
+      )
+    );
+
+    res.status(201).json({ message: '기피 음식 저장 완료!', data: restrictions });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: '서버 오류' });
+  }
+};
