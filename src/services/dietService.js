@@ -14,3 +14,6 @@ export const saveCustomMeal = (meal_type, foods, log_date) =>
 
 export const getCustomMeals = (date) =>
   get(`/diet/custom${date ? `?date=${date}` : ''}`)
+
+export const searchFood = (keyword) =>
+  get(`/diet/search?keyword=${encodeURIComponent(keyword)}`)

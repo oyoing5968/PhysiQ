@@ -11,3 +11,6 @@ export const saveLifestyle = (data) =>
 
 export const getUserInfo = () =>
   get('/user/info')
+
+export const saveRestriction = (food_categories) =>
+  post('/user/restriction', { food_categories })

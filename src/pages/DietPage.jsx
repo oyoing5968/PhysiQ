@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { foods } from '../mock'
 import * as dietService from '../services/dietService'
 import * as goalService from '../services/goalService'
 
@@ -14,6 +13,20 @@ const MEAL_COLOR = {
   lunch:     { border: 'border-green-500/40',  badge: 'bg-green-500/20  text-green-400',  btn: 'text-green-400  border-green-500/30  hover:bg-green-500/10'  },
   dinner:    { border: 'border-blue-500/40',   badge: 'bg-blue-500/20   text-blue-400',   btn: 'text-blue-400   border-blue-500/30   hover:bg-blue-500/10'   },
   snack:     { border: 'border-purple-500/40', badge: 'bg-purple-500/20 text-purple-400', btn: 'text-purple-400 border-purple-500/30 hover:bg-purple-500/10' },
+}
+
+function normalizeFood(apiFood) {
+  return {
+    id:          apiFood.food_id,
+    name:        apiFood.name,
+    category:    apiFood.category,
+    brand:       null,
+    servingSize: 100,
+    calories:    apiFood.kcal,
+    protein:     apiFood.protein,
+    carbs:       apiFood.carb,
+    fat:         apiFood.fat,
+  }
 }
 
 function normalizeDietLog(log) {
@@ -64,9 +77,12 @@ export default function DietPage() {
 
   const [activeMealType, setActiveMealType] = useState(null)
   const [query,          setQuery]          = useState('')
+  const [searchResults,  setSearchResults]  = useState([])
+  const [searching,      setSearching]      = useState(false)
   const [selectedFood,   setSelectedFood]   = useState(null)
   const [amountInput,    setAmountInput]    = useState('')
   const [amountError,    setAmountError]    = useState('')
+  const [saving,         setSaving]         = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -100,12 +116,23 @@ export default function DietPage() {
   const isModalOpen  = activeMealType !== null
   const isAmountStep = selectedFood !== null
 
-  const filteredFoods = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return foods
-    return foods.filter(
-      (f) => f.name.toLowerCase().includes(q) || (f.brand ?? '').toLowerCase().includes(q)
-    )
+  useEffect(() => {
+    if (!query.trim()) {
+      setSearchResults([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const res = await dietService.searchFood(query)
+        setSearchResults((res.data ?? []).map(normalizeFood))
+      } catch {
+        setSearchResults([])
+      } finally {
+        setSearching(false)
+      }
+    }, 300)
+    return () => clearTimeout(timer)
   }, [query])
 
   const handleSelectFood = (food) => {
@@ -114,30 +141,44 @@ export default function DietPage() {
     setAmountError('')
   }
 
-  const handleAddFood = () => {
+  const handleAddFood = async () => {
     const val = parseFloat(amountInput)
     if (isNaN(val) || val <= 0) {
       setAmountError('올바른 섭취량을 입력해주세요')
       return
     }
-    const ratio = val / selectedFood.servingSize
-    const newLog = {
-      id: Date.now(),
-      mealType: activeMealType,
-      food: selectedFood,
-      amount: val,
-      calories: Math.round(selectedFood.calories * ratio),
-      protein:  Math.round(selectedFood.protein  * ratio * 10) / 10,
-      carbs:    Math.round(selectedFood.carbs    * ratio * 10) / 10,
-      fat:      Math.round(selectedFood.fat      * ratio * 10) / 10,
+    const ratio          = val / selectedFood.servingSize
+    const estimatedKcal  = Math.round(selectedFood.calories * ratio)
+    setSaving(true)
+    try {
+      const res = await dietService.saveDietLog(
+        activeMealType,
+        [{ food_id: selectedFood.id, amount_g: val, estimated_kcal: estimatedKcal }],
+        TODAY
+      )
+      const newLog = {
+        id:       res.data?.log_id ?? Date.now(),
+        mealType: activeMealType,
+        food:     selectedFood,
+        amount:   val,
+        calories: estimatedKcal,
+        protein:  Math.round(selectedFood.protein * ratio * 10) / 10,
+        carbs:    Math.round(selectedFood.carbs   * ratio * 10) / 10,
+        fat:      Math.round(selectedFood.fat     * ratio * 10) / 10,
+      }
+      setLogs((prev) => [...prev, newLog])
+      closeModal()
+    } catch (err) {
+      setAmountError(err.message || '저장 중 오류가 발생했습니다.')
+    } finally {
+      setSaving(false)
     }
-    setLogs((prev) => [...prev, newLog])
-    closeModal()
   }
 
   const closeModal = () => {
     setActiveMealType(null)
     setQuery('')
+    setSearchResults([])
     setSelectedFood(null)
     setAmountInput('')
     setAmountError('')
@@ -379,25 +420,22 @@ export default function DietPage() {
                   />
                 </div>
                 <ul className="overflow-y-auto flex-1 px-4 pb-4 space-y-1">
-                  {filteredFoods.length === 0 ? (
+                  {!query.trim() ? (
+                    <li className="text-sm text-gray-500 text-center py-8">음식 이름을 검색해주세요</li>
+                  ) : searching ? (
+                    <li className="text-sm text-gray-500 text-center py-8">검색 중...</li>
+                  ) : searchResults.length === 0 ? (
                     <li className="text-sm text-gray-500 text-center py-8">검색 결과가 없어요</li>
                   ) : (
-                    filteredFoods.map((food) => (
+                    searchResults.map((food) => (
                       <li key={food.id}>
                         <button
                           onClick={() => handleSelectFood(food)}
                           className="w-full flex items-center justify-between px-3 py-3 rounded-xl bg-[#1A2B3C] hover:bg-white/5 transition text-left"
                         >
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-white">{food.name}</span>
-                              {food.brand && (
-                                <span className="text-xs text-gray-500">{food.brand}</span>
-                              )}
-                            </div>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              1회 제공량 {food.servingSize}g
-                            </p>
+                            <span className="text-sm font-medium text-white">{food.name}</span>
+                            <p className="text-xs text-gray-500 mt-0.5">100g 기준</p>
                           </div>
                           <div className="shrink-0 text-right ml-3">
                             <p className="text-sm font-semibold text-white">{food.calories} kcal</p>
@@ -469,9 +507,10 @@ export default function DietPage() {
 
                 <button
                   onClick={handleAddFood}
-                  className="w-full py-3 rounded-xl bg-white text-[#0D1B2A] text-sm font-semibold transition mt-1 hover:bg-gray-100"
+                  disabled={saving}
+                  className="w-full py-3 rounded-xl bg-white disabled:bg-white/40 text-[#0D1B2A] text-sm font-semibold transition mt-1 hover:bg-gray-100"
                 >
-                  {MEAL_LABEL[activeMealType]}에 추가
+                  {saving ? '저장 중...' : `${MEAL_LABEL[activeMealType]}에 추가`}
                 </button>
               </div>
             )}

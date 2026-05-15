@@ -14,8 +14,11 @@ const STEPS = [
   { title: '키를 입력해주세요',          desc: '정확한 추천을 위해 현재 키를\n입력해주세요',             icon: '📏', iconBg: 'bg-blue-500' },
   { title: '체중을 입력해주세요',         desc: '현재 체중을 입력해주세요\n(공복 체중 권장)',            icon: '⚖️', iconBg: 'bg-pink-500' },
   { title: '인바디 정보를\n입력해주세요',  desc: '더 정확한 추천을 위한 선택 정보입니다',                icon: '⚡', iconBg: 'bg-green-500' },
+  { title: '기피 음식을\n선택해주세요',   desc: '선택한 카테고리는 식단 추천에서 제외됩니다',             icon: '🚫', iconBg: 'bg-red-500' },
   { title: '어떤 목표를\n이루고 싶으신가요?', desc: '목표에 맞는 최적의 플랜을 제공해드립니다',           icon: null, iconBg: null },
 ]
+
+const FOOD_CATEGORIES = ['밥류', '국 및 탕류', '볶음류', '조림류', '구이류', '찌개 및 전골류', '찜류', '튀김류']
 
 const GOALS = [
   { value: 'lose_weight',   icon: '↘', label: '체중 감량',     sub: '다이어트',  desc: '건강한 방법으로 체중을 줄이고 싶어요' },
@@ -31,8 +34,6 @@ export default function Onboarding() {
   const [submitError, setSubmitError] = useState('')
 
   const [data, setData] = useState({
-    gender: '',
-    birthDate: '',
     height: '',
     weight: '',
     bodyFat: '',
@@ -65,6 +66,9 @@ export default function Onboarding() {
         meal_time_end: '20:00',
         workout_volume: 'medium',
       })
+      if (data.avoidFoods.length > 0) {
+        await userService.saveRestriction(data.avoidFoods)
+      }
       await goalService.setGoal(GOAL_TYPE_MAP[data.goal] || 'diet', null)
       navigate('/', { replace: true })
     } catch (err) {
@@ -73,10 +77,12 @@ export default function Onboarding() {
     }
   }
 
-  const goNext = () => (step < STEPS.length - 1 ? setStep((s) => s + 1) : finish())
+  const LAST_STEP = STEPS.length - 1
+
+  const goNext = () => (step < LAST_STEP ? setStep((s) => s + 1) : finish())
   const goBack = () => (step > 0 ? setStep((s) => s - 1) : navigate(-1))
 
-  const isLast = step === STEPS.length - 1
+  const isLast = step === LAST_STEP
   const progress = ((step + 1) / STEPS.length) * 100
 
   return (
@@ -94,12 +100,12 @@ export default function Onboarding() {
           </svg>
         </button>
         <span className="text-gray-400 text-sm">
-          {step === 2 && (
+          {(step === 2 || step === 3) && (
             <button onClick={goNext} className="text-gray-400 hover:text-white transition text-sm">
               건너뛰기
             </button>
           )}
-          {step !== 2 && `${step + 1}/${STEPS.length}`}
+          {step !== 2 && step !== 3 && `${step + 1}/${STEPS.length}`}
         </span>
       </div>
 
@@ -130,15 +136,16 @@ export default function Onboarding() {
 
       {/* 단계별 콘텐츠 */}
       <div className="flex-1">
-        {step === 0 && <HeightStep data={data} update={update} />}
-        {step === 1 && <WeightStep data={data} update={update} />}
-        {step === 2 && <InbodyStep data={data} update={update} />}
-        {step === 3 && <GoalStep   data={data} update={update} />}
+        {step === 0 && <HeightStep      data={data} update={update} />}
+        {step === 1 && <WeightStep      data={data} update={update} />}
+        {step === 2 && <InbodyStep      data={data} update={update} />}
+        {step === 3 && <AvoidFoodsStep  data={data} update={update} />}
+        {step === 4 && <GoalStep        data={data} update={update} />}
       </div>
 
       {/* 하단 버튼 */}
       <div className="mt-6 flex gap-3">
-        {step === 2 && (
+        {(step === 2 || step === 3) && (
           <button
             onClick={goNext}
             className="flex-1 py-4 rounded-xl bg-white/5 border border-white/10 text-gray-300 text-sm font-medium transition hover:bg-white/10"
@@ -171,6 +178,7 @@ export default function Onboarding() {
 function hasInput(step, data) {
   if (step === 0) return !!data.height
   if (step === 1) return !!data.weight
+  if (step === 4) return !!data.goal
   return true
 }
 
@@ -290,7 +298,48 @@ function InbodyStep({ data, update }) {
   )
 }
 
-/* ─── Step 3: 목표 ─────────────────────────────────────── */
+/* ─── Step 3: 기피 음식 ────────────────────────────────── */
+function AvoidFoodsStep({ data, update }) {
+  const toggle = (category) => {
+    const next = data.avoidFoods.includes(category)
+      ? data.avoidFoods.filter((c) => c !== category)
+      : [...data.avoidFoods, category]
+    update('avoidFoods', next)
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        {FOOD_CATEGORIES.map((category) => {
+          const selected = data.avoidFoods.includes(category)
+          return (
+            <button
+              key={category}
+              type="button"
+              onClick={() => toggle(category)}
+              className={`py-3.5 px-4 rounded-xl border text-sm font-medium text-left transition ${
+                selected
+                  ? 'border-red-400 bg-red-500/10 text-red-300'
+                  : 'border-white/10 bg-[#132236] text-white hover:border-white/20'
+              }`}
+            >
+              {selected && <span className="mr-1.5">✕</span>}
+              {category}
+            </button>
+          )
+        })}
+      </div>
+      <div className="bg-[#132236] border border-white/10 rounded-xl px-4 py-3 mt-2">
+        <p className="text-xs text-gray-500 leading-relaxed">
+          선택한 카테고리의 음식은 AI 식단 추천에서 제외됩니다.<br />
+          없으면 건너뛰기를 눌러주세요.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/* ─── Step 4: 목표 ─────────────────────────────────────── */
 function GoalStep({ data, update }) {
   return (
     <div className="space-y-3">

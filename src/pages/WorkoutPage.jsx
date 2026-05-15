@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
-import { workoutLogs, user } from '../mock'
-import { EXERCISES, MUSCLES } from '../exerciseData.js'
+import { useEffect, useMemo, useState } from 'react'
+import * as workoutService from '../services/workoutService'
+import * as userService from '../services/userService'
 
-const MOCK_DATE = '2026-03-26'
+const TODAY = new Date().toISOString().slice(0, 10)
 
 const CATEGORY_COLOR = {
   strength:     'bg-blue-500/20 text-blue-400',
@@ -29,63 +29,102 @@ function calcCalories(exercise, inputs, weightKg) {
   }
 }
 
-const MOCK_EXERCISE_CATEGORY = {
-  '벤치프레스':      'strength',
-  '오버헤드프레스':  'strength',
-  '러닝 (트레드밀)': 'cardio',
-  '스쿼트':         'strength',
-  '데드리프트':      'powerlifting',
-  '플랭크':         'strength',
-  '풀업':           'strength',
-  '케이블 로우':     'strength',
-  '줄넘기':         'cardio',
+// API 응답(운동 기록 목록) → 내부 포맷
+function normalizeLogs(apiResponse) {
+  return (apiResponse?.data ?? []).map((item) => ({
+    id:            item.log_id,
+    exercise: {
+      id:            item.exercise_id,
+      exercise_id:   item.exercise_id,
+      name:          item.Exercise?.name ?? '',
+      category:      item.Exercise?.category ?? 'strength',
+      primaryMuscles: [],
+    },
+    sets:           item.sets,
+    reps:           item.reps,
+    weightKg:       item.weight_kg,
+    durationMin:    item.duration_min,
+    distanceKm:     null,
+    caloriesBurned: item.kcal_burned,
+  }))
 }
 
-function initLogs() {
-  return workoutLogs
-    .filter((w) => w.date === MOCK_DATE)
-    .map((w) => ({
-      id:            w.id,
-      exercise: {
-        id:             w.id,
-        name:           w.exerciseName,
-        category:       MOCK_EXERCISE_CATEGORY[w.exerciseName] ?? 'strength',
-        primaryMuscles: [],
-      },
-      sets:           w.sets,
-      reps:           w.reps,
-      weightKg:       w.weightKg,
-      durationMin:    w.durationMin,
-      distanceKm:     w.distanceKm,
-      caloriesBurned: w.caloriesBurned,
-    }))
+// API 응답(운동 검색) → 내부 포맷
+function normalizeExercise(apiEx) {
+  return {
+    id:            apiEx.exercise_id,
+    exercise_id:   apiEx.exercise_id,
+    name:          apiEx.name,
+    category:      apiEx.category,
+    equipment:     apiEx.equipment,
+    primaryMuscles: (apiEx.Muscles ?? []).map((m) => m.name ?? m),
+  }
 }
 
 export default function WorkoutPage() {
-  const [logs, setLogs]                         = useState(initLogs)
+  const [logs, setLogs]                         = useState([])
+  const [loading, setLoading]                   = useState(true)
+  const [userWeight, setUserWeight]             = useState(70)
   const [isModalOpen, setIsModalOpen]           = useState(false)
   const [categoryFilter, setCategoryFilter]     = useState('전체')
   const [query, setQuery]                       = useState('')
+  const [searchResults, setSearchResults]       = useState([])
+  const [searching, setSearching]               = useState(false)
   const [selectedExercise, setSelectedExercise] = useState(null)
   const [formInputs, setFormInputs]             = useState({ sets: '', reps: '', weightKg: '', durationMin: '', distanceKm: '' })
   const [formError, setFormError]               = useState('')
   const [previewExercise, setPreviewExercise]   = useState(null)
 
-  const filteredExercises = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    let list = EXERCISES
-    if (categoryFilter !== '전체') list = list.filter((e) => e.category === categoryFilter)
-    if (!q) return list
-    return list.filter((e) => e.name.toLowerCase().includes(q))
-  }, [query, categoryFilter])
+  // 마운트 시 오늘 운동 기록 + 사용자 체중 로드
+  useEffect(() => {
+    Promise.allSettled([
+      workoutService.getWorkoutLogs(TODAY),
+      userService.getUserInfo(),
+    ]).then(([logsRes, userRes]) => {
+      if (logsRes.status === 'fulfilled') {
+        setLogs(normalizeLogs(logsRes.value))
+      }
+      if (userRes.status === 'fulfilled') {
+        const weight = userRes.value?.data?.dynamic_info?.weight
+        if (weight) setUserWeight(weight)
+      }
+      setLoading(false)
+    })
+  }, [])
 
-  const totalBurned    = useMemo(() => logs.reduce((s, l) => s + l.caloriesBurned, 0), [logs])
+  // 운동 검색 (debounce 300ms)
+  useEffect(() => {
+    if (!query.trim()) {
+      setSearchResults([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const res = await workoutService.searchExercises(query)
+        setSearchResults((res.data ?? []).map(normalizeExercise))
+      } catch {
+        setSearchResults([])
+      } finally {
+        setSearching(false)
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [query])
+
+  // 카테고리 필터를 검색 결과에 클라이언트 측 적용
+  const filteredSearchResults = useMemo(() => {
+    if (categoryFilter === '전체') return searchResults
+    return searchResults.filter((e) => e.category === categoryFilter)
+  }, [searchResults, categoryFilter])
+
+  const totalBurned    = useMemo(() => logs.reduce((s, l) => s + (l.caloriesBurned ?? 0), 0), [logs])
   const totalSets      = useMemo(() => logs.filter((l) => l.sets).reduce((s, l) => s + l.sets, 0), [logs])
   const totalCardioMin = useMemo(() => logs.filter((l) => l.exercise.category === 'cardio').reduce((s, l) => s + (l.durationMin ?? 0), 0), [logs])
   const caloriePreview = useMemo(() => {
     if (!selectedExercise) return null
-    return calcCalories(selectedExercise, formInputs, user.weight)
-  }, [selectedExercise, formInputs])
+    return calcCalories(selectedExercise, formInputs, userWeight)
+  }, [selectedExercise, formInputs, userWeight])
 
   const handleSelectExercise = (ex) => {
     setSelectedExercise(ex)
@@ -93,9 +132,10 @@ export default function WorkoutPage() {
     setFormError('')
   }
 
-  const handleAddWorkout = () => {
+  const handleAddWorkout = async () => {
     if (!selectedExercise) return
-    if (selectedExercise.category === 'cardio') {
+    const isCardio = selectedExercise.category === 'cardio'
+    if (isCardio) {
       const min = parseFloat(formInputs.durationMin)
       if (isNaN(min) || min <= 0) { setFormError('운동 시간을 입력해주세요'); return }
     } else {
@@ -104,19 +144,32 @@ export default function WorkoutPage() {
       if (isNaN(sets) || sets <= 0) { setFormError('세트 수를 입력해주세요'); return }
       if (isNaN(reps) || reps <= 0) { setFormError('렙 수를 입력해주세요'); return }
     }
-    const calories = calcCalories(selectedExercise, formInputs, user.weight) ?? 0
-    const newLog = {
-      id:            Date.now(),
-      exercise:      selectedExercise,
-      sets:          selectedExercise.category !== 'cardio' ? parseFloat(formInputs.sets) : null,
-      reps:          selectedExercise.category !== 'cardio' ? parseFloat(formInputs.reps) : null,
-      weightKg:      selectedExercise.category !== 'cardio' ? (parseFloat(formInputs.weightKg) || 0) : null,
-      durationMin:   selectedExercise.category === 'cardio' ? parseFloat(formInputs.durationMin) : null,
-      distanceKm:    selectedExercise.category === 'cardio' ? (parseFloat(formInputs.distanceKm) || null) : null,
-      caloriesBurned: calories,
+    const kcal = calcCalories(selectedExercise, formInputs, userWeight) ?? 0
+    try {
+      const res = await workoutService.saveWorkoutLog({
+        exercise_id:  selectedExercise.exercise_id,
+        log_date:     TODAY,
+        sets:         isCardio ? null : Number(formInputs.sets),
+        reps:         isCardio ? null : Number(formInputs.reps),
+        weight_kg:    isCardio ? null : (formInputs.weightKg ? Number(formInputs.weightKg) : null),
+        duration_min: isCardio ? Number(formInputs.durationMin) : null,
+        kcal_burned:  kcal,
+      })
+      const saved = res.data
+      setLogs((prev) => [...prev, {
+        id:            saved.log_id,
+        exercise:      selectedExercise,
+        sets:          saved.sets,
+        reps:          saved.reps,
+        weightKg:      saved.weight_kg,
+        durationMin:   saved.duration_min,
+        distanceKm:    isCardio ? (parseFloat(formInputs.distanceKm) || null) : null,
+        caloriesBurned: saved.kcal_burned,
+      }])
+      closeModal()
+    } catch (err) {
+      setFormError(err.message || '저장 중 오류가 발생했습니다.')
     }
-    setLogs((prev) => [...prev, newLog])
-    closeModal()
   }
 
   const handleDelete = (id) => setLogs((prev) => prev.filter((l) => l.id !== id))
@@ -126,6 +179,7 @@ export default function WorkoutPage() {
     setQuery('')
     setCategoryFilter('전체')
     setSelectedExercise(null)
+    setSearchResults([])
     setFormInputs({ sets: '', reps: '', weightKg: '', durationMin: '', distanceKm: '' })
     setFormError('')
   }
@@ -139,7 +193,7 @@ export default function WorkoutPage() {
       <div className="bg-[#0D1B2A] border-b border-white/10 px-6 pt-8 pb-4 sticky top-0 z-10 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white">운동 기록</h1>
-          <p className="text-gray-400 text-xs mt-0.5">{MOCK_DATE}</p>
+          <p className="text-gray-400 text-xs mt-0.5">{TODAY}</p>
         </div>
       </div>
 
@@ -160,7 +214,11 @@ export default function WorkoutPage() {
         </div>
 
         {/* 운동 카드 목록 */}
-        {logs.length === 0 ? (
+        {loading ? (
+          <div className="bg-[#132236] border border-white/10 rounded-xl p-10 text-center">
+            <p className="text-gray-400 text-sm">불러오는 중...</p>
+          </div>
+        ) : logs.length === 0 ? (
           <div className="bg-[#132236] border border-white/10 rounded-xl p-10 text-center">
             <p className="text-gray-400 text-sm">아직 기록된 운동이 없어요</p>
             <p className="text-gray-600 text-xs mt-1">아래 버튼으로 운동을 추가해보세요</p>
@@ -232,10 +290,14 @@ export default function WorkoutPage() {
                   ))}
                 </div>
                 <div className="overflow-y-auto max-h-72 px-5 pb-5 space-y-1">
-                  {filteredExercises.length === 0 ? (
+                  {!query.trim() ? (
+                    <p className="text-sm text-gray-500 text-center py-6">검색어를 입력해주세요</p>
+                  ) : searching ? (
+                    <p className="text-sm text-gray-500 text-center py-6">검색 중...</p>
+                  ) : filteredSearchResults.length === 0 ? (
                     <p className="text-sm text-gray-500 text-center py-6">검색 결과가 없어요</p>
                   ) : (
-                    filteredExercises.map((ex) => (
+                    filteredSearchResults.map((ex) => (
                       <div key={ex.id} className="flex items-center">
                         <button
                           onClick={() => handleSelectExercise(ex)}
@@ -455,23 +517,17 @@ function ExercisePreviewSheet({ exercise, onClose, onSelect }) {
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-lg leading-none transition">×</button>
         </div>
-        {exercise.images?.[0] ? (
-          <img
-            src={`https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/${exercise.images[0]}`}
-            alt={exercise.name}
-            className="w-full rounded-xl object-cover max-h-52"
-          />
-        ) : (
-          <div className="w-full h-40 bg-[#1A2B3C] rounded-xl flex items-center justify-center">
-            <span className="text-sm text-gray-500">동작 이미지 준비 중</span>
-          </div>
-        )}
+        <div className="w-full h-40 bg-[#1A2B3C] rounded-xl flex items-center justify-center">
+          <span className="text-sm text-gray-500">동작 이미지 준비 중</span>
+        </div>
         <div className="space-y-1">
           <p className="text-xs text-gray-500">
-            타겟 근육: <span className="font-medium text-gray-300">{exercise.primaryMuscles?.join(', ') ?? '—'}</span>
+            타겟 근육: <span className="font-medium text-gray-300">{exercise.primaryMuscles?.join(', ') || '—'}</span>
           </p>
-          {exercise.instructions && (
-            <p className="text-sm text-gray-400">{exercise.instructions}</p>
+          {exercise.equipment && (
+            <p className="text-xs text-gray-500">
+              장비: <span className="font-medium text-gray-300">{exercise.equipment}</span>
+            </p>
           )}
         </div>
         <button
