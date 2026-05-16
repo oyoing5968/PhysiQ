@@ -1,4 +1,7 @@
-import { useLocation, useNavigate } from 'react-router-dom'
+// [UNUSED] BottomNav — 사이드바 전환으로 비활성화 (2026-05-12)
+// AppLayout.jsx에서 import가 제거됨. Sidebar.jsx 참고.
+
+/* import { useLocation, useNavigate } from 'react-router-dom'
 
 const NAV_ITEMS = [
   {
@@ -82,3 +85,4 @@ export default function BottomNav() {
     </div>
   )
 }
+*/

@@ -1,40 +1,39 @@
-
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import * as userService from '../services/userService'
+import * as goalService from '../services/goalService'
 
-// 온보딩 단계 정의 — 모두 선택 사항
+const GOAL_TYPE_MAP = {
+  lose_weight:  'diet',
+  cutting:      'cutting',
+  dirty_bulkup: 'dirty_bulk',
+  lean_massup:  'lean_mass',
+}
+
 const STEPS = [
-  { title: '신체 정보',   desc: '현재 몸 상태를 입력해주세요 (선택 사항)' },
-  { title: '라이프스타일', desc: '생활 패턴을 알려주세요 (선택 사항)' },
-  { title: '목표 설정',   desc: '달성하고 싶은 목표를 선택해주세요 (선택 사항)' },
+  { title: '키를 입력해주세요',          desc: '정확한 추천을 위해 현재 키를\n입력해주세요',             icon: '📏', iconBg: 'bg-blue-500' },
+  { title: '체중을 입력해주세요',         desc: '현재 체중을 입력해주세요\n(공복 체중 권장)',            icon: '⚖️', iconBg: 'bg-pink-500' },
+  { title: '인바디 정보를\n입력해주세요',  desc: '더 정확한 추천을 위한 선택 정보입니다',                icon: '⚡', iconBg: 'bg-green-500' },
+  { title: '기피 음식을\n선택해주세요',   desc: '선택한 카테고리는 식단 추천에서 제외됩니다',             icon: '🚫', iconBg: 'bg-red-500' },
+  { title: '어떤 목표를\n이루고 싶으신가요?', desc: '목표에 맞는 최적의 플랜을 제공해드립니다',           icon: null, iconBg: null },
 ]
 
-// 목표 선택지
+const FOOD_CATEGORIES = ['밥류', '국 및 탕류', '볶음류', '조림류', '구이류', '찌개 및 전골류', '찜류', '튀김류']
+
 const GOALS = [
-  { value: 'diet',         emoji: '🥗', label: '다이어트',           desc: '체중 감량에 집중합니다' },
-  { value: 'dirty_bulkup', emoji: '💪', label: '더티 벌크업',        desc: '칼로리 잉여로 빠른 근육 성장' },
-  { value: 'lean_massup',  emoji: '⚡', label: '린매스업',           desc: '클린 칼로리로 깔끔하게 늘리기' },
-  { value: 'cutting',      emoji: '✂️', label: '컷팅',               desc: '근육을 유지하며 체지방 제거' },
-  { value: 'recomp',       emoji: '🎯', label: '근성장·다이어트 병행', desc: '체지방 감소와 근성장 동시에' },
-]
-
-const EXERCISE_VOLUMES = ['거의 안 함', '주 1-2회', '주 3-4회', '주 5회 이상']
-
-// 기피 음식 선택지
-const AVOID_FOODS = [
-  '돼지고기', '소고기', '닭고기', '생선', '해산물',
-  '유제품', '계란', '견과류', '밀가루/글루텐', '콩류',
-  '매운 음식', '당류/단 음식',
+  { value: 'lose_weight',   icon: '↘', label: '체중 감량',     sub: '다이어트',  desc: '건강한 방법으로 체중을 줄이고 싶어요' },
+  { value: 'cutting',       icon: '✂', label: '체지방 감소',   sub: '컷팅',     desc: '근육은 유지하면서 체지방만 빼고 싶어요' },
+  { value: 'dirty_bulkup',  icon: '↗', label: '근육 증가',     sub: '벌크업',   desc: '체중과 근육량을 늘리고 싶어요' },
+  { value: 'lean_massup',   icon: '⚡', label: '체지방 최소화', sub: '린매스업', desc: '체지방은 최소화하면서 근육만 늘리고 싶어요' },
 ]
 
 export default function Onboarding() {
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
-  // 모든 단계의 입력값을 하나의 객체로 관리
   const [data, setData] = useState({
-    gender: '',
-    birthDate: '',
     height: '',
     weight: '',
     bodyFat: '',
@@ -47,328 +46,324 @@ export default function Onboarding() {
     goal: '',
   })
 
-  // 단일 필드 업데이트 헬퍼
   const update = (field, value) =>
     setData((prev) => ({ ...prev, [field]: value }))
 
-  // 기피 음식 토글 — 이미 있으면 제거, 없으면 추가
-  const toggleFood = (food) =>
-    setData((prev) => ({
-      ...prev,
-      avoidFoods: prev.avoidFoods.includes(food)
-        ? prev.avoidFoods.filter((f) => f !== food)
-        : [...prev.avoidFoods, food],
-    }))
-
-  // 온보딩 완료 또는 전체 건너뛰기
-  // 입력값을 localStorage에 저장하고 홈으로 이동
-  const finish = () => {
-    localStorage.setItem('physiq_profile', JSON.stringify(data))
-    navigate('/', { replace: true })
+  const finish = async () => {
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      await userService.saveStaticInfo(Number(data.height))
+      await userService.saveDynamicInfo(
+        Number(data.weight),
+        data.bodyFat ? Number(data.bodyFat) : null,
+        data.skeletalMuscle ? Number(data.skeletalMuscle) : null
+      )
+      await userService.saveLifestyle({
+        job_type: 'office',
+        sleep_hours: 7,
+        meal_time_start: '08:00',
+        meal_time_end: '20:00',
+        workout_volume: 'medium',
+      })
+      if (data.avoidFoods.length > 0) {
+        await userService.saveRestriction(data.avoidFoods)
+      }
+      await goalService.setGoal(GOAL_TYPE_MAP[data.goal] || 'diet', null)
+      navigate('/', { replace: true })
+    } catch (err) {
+      setSubmitError(err.message || '저장 중 오류가 발생했습니다.')
+      setSubmitting(false)
+    }
   }
 
-  // "다음" 또는 "건너뛰기" 버튼 — 마지막 단계면 finish
-  const goNext = () => (step < STEPS.length - 1 ? setStep((s) => s + 1) : finish())
-  const goBack = () => setStep((s) => s - 1)
+  const LAST_STEP = STEPS.length - 1
 
-  const isLast = step === STEPS.length - 1
+  const goNext = () => (step < LAST_STEP ? setStep((s) => s + 1) : finish())
+  const goBack = () => (step > 0 ? setStep((s) => s - 1) : navigate(-1))
+
+  const isLast = step === LAST_STEP
+  const progress = ((step + 1) / STEPS.length) * 100
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center px-4 py-8">
+    <div className="min-h-screen bg-[#0D1B2A] flex flex-col">
+    <div className="w-full max-w-md mx-auto flex flex-col flex-1 px-6 py-6">
 
-      {/* 상단 헤더 — 나중에 하기로 전체 건너뛰기 가능 */}
-      <div className="w-full max-w-lg flex justify-between items-center mb-6">
-        <h1 className="text-xl font-bold text-blue-600">PhysiQ</h1>
+      {/* 상단 네비게이션 */}
+      <div className="flex items-center justify-between mb-4">
         <button
-          onClick={finish}
-          className="text-sm text-gray-400 hover:text-gray-600 transition"
+          onClick={goBack}
+          className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition"
         >
-          나중에 하기
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
         </button>
+        <span className="text-gray-400 text-sm">
+          {(step === 2 || step === 3) && (
+            <button onClick={goNext} className="text-gray-400 hover:text-white transition text-sm">
+              건너뛰기
+            </button>
+          )}
+          {step !== 2 && step !== 3 && `${step + 1}/${STEPS.length}`}
+        </span>
       </div>
 
-      {/* 진행 바 — 현재 단계까지 파란색으로 채움 */}
-      <div className="w-full max-w-lg mb-6">
-        <div className="flex gap-1.5 mb-4">
-          {STEPS.map((_, i) => (
-            <div
-              key={i}
-              className={`flex-1 h-1.5 rounded-full transition-colors duration-300
-                ${i <= step ? 'bg-blue-600' : 'bg-gray-200'}`}
-            />
-          ))}
+      {/* 진행 바 */}
+      <div className="w-full h-1 bg-white/10 rounded-full mb-8">
+        <div
+          className="h-1 bg-yellow-400 rounded-full transition-all duration-300"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
+      {/* 아이콘 (Step 0-2) */}
+      {STEPS[step].icon && (
+        <div className="flex justify-center mb-6">
+          <div className={`w-14 h-14 rounded-full ${STEPS[step].iconBg} flex items-center justify-center text-2xl`}>
+            {STEPS[step].icon}
+          </div>
         </div>
-        <p className="text-xs font-medium text-blue-500 mb-1">
-          STEP {step + 1} / {STEPS.length}
-        </p>
-        <h2 className="text-xl font-bold text-gray-800">{STEPS[step].title}</h2>
-        <p className="text-sm text-gray-500 mt-0.5">{STEPS[step].desc}</p>
+      )}
+
+      {/* 제목 + 설명 */}
+      <h2 className="text-2xl font-bold text-white mb-2 leading-snug whitespace-pre-line">
+        {STEPS[step].title}
+      </h2>
+      <p className="text-gray-400 text-sm mb-8 whitespace-pre-line">
+        {STEPS[step].desc}
+      </p>
+
+      {/* 단계별 콘텐츠 */}
+      <div className="flex-1">
+        {step === 0 && <HeightStep      data={data} update={update} />}
+        {step === 1 && <WeightStep      data={data} update={update} />}
+        {step === 2 && <InbodyStep      data={data} update={update} />}
+        {step === 3 && <AvoidFoodsStep  data={data} update={update} />}
+        {step === 4 && <GoalStep        data={data} update={update} />}
       </div>
 
-      {/* 현재 단계에 맞는 컴포넌트 렌더링 */}
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-5">
-        {step === 0 && <BodyInfoStep  data={data} update={update} />}
-        {step === 1 && <LifestyleStep data={data} update={update} toggleFood={toggleFood} />}
-        {step === 2 && <GoalStep      data={data} update={update} />}
-      </div>
-
-      {/* 하단 버튼 — 건너뛰기(입력 없이 다음)와 다음(입력 포함 다음)이 같은 동작 */}
-      <div className="w-full max-w-lg flex gap-2">
-        {step > 0 && (
+      {/* 하단 버튼 */}
+      <div className="mt-6 flex gap-3">
+        {(step === 2 || step === 3) && (
           <button
-            onClick={goBack}
-            className="px-5 py-3 rounded-xl border border-gray-300 text-gray-600 text-sm font-medium hover:bg-gray-50 transition"
+            onClick={goNext}
+            className="flex-1 py-4 rounded-xl bg-white/5 border border-white/10 text-gray-300 text-sm font-medium transition hover:bg-white/10"
           >
-            이전
+            건너뛰기
           </button>
+        )}
+        {submitError && (
+          <p className="text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2 mb-2 text-center">
+            {submitError}
+          </p>
         )}
         <button
           onClick={goNext}
-          className="flex-1 py-3 rounded-xl border border-gray-300 text-gray-500 text-sm font-medium hover:bg-gray-50 transition"
+          disabled={submitting}
+          className={`flex-1 py-4 rounded-xl text-sm font-semibold transition ${
+            hasInput(step, data) && !submitting
+              ? 'bg-white text-[#0D1B2A]'
+              : 'bg-white/20 text-gray-400 cursor-default'
+          }`}
         >
-          {isLast ? '건너뛰기' : '이 단계 건너뛰기'}
+          {isLast ? (submitting ? '저장 중...' : '완료') : '다음'}
         </button>
-        <button
-          onClick={goNext}
-          className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition"
-        >
-          {isLast ? '완료' : '다음'}
-        </button>
+      </div>
+    </div>
+    </div>
+  )
+}
+
+function hasInput(step, data) {
+  if (step === 0) return !!data.height
+  if (step === 1) return !!data.weight
+  if (step === 4) return !!data.goal
+  return true
+}
+
+/* ─── Step 0: 키 ───────────────────────────────────────── */
+function HeightStep({ data, update }) {
+  const chips = ['160', '170', '180']
+  return (
+    <div className="space-y-6">
+      <div className="flex items-end justify-center gap-3">
+        <input
+          type="number"
+          value={data.height}
+          onChange={(e) => update('height', e.target.value)}
+          placeholder="170"
+          min={100} max={250}
+          className="w-36 bg-transparent text-5xl font-bold text-blue-400 text-center border-b-2 border-blue-400/50 outline-none focus:border-blue-400 transition pb-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        />
+        <span className="text-white text-2xl font-medium mb-1">cm</span>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {chips.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => update('height', v)}
+            className={`py-3 rounded-xl text-sm font-medium transition ${
+              data.height === v
+                ? 'bg-blue-500/30 border border-blue-400 text-blue-300'
+                : 'bg-[#132236] border border-white/10 text-white hover:bg-white/10'
+            }`}
+          >
+            {v}cm
+          </button>
+        ))}
       </div>
     </div>
   )
 }
 
-/* ─── STEP 1: 신체 정보 ───────────────────────────────── */
-function BodyInfoStep({ data, update }) {
+/* ─── Step 1: 체중 ─────────────────────────────────────── */
+function WeightStep({ data, update }) {
+  const chips = ['60', '70', '80']
   return (
-    <div className="space-y-5">
-
-      {/* 성별 */}
-      <Field label="성별">
-        <div className="flex gap-2">
-          {[{ value: 'male', label: '남성' }, { value: 'female', label: '여성' }].map(({ value, label }) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => update('gender', value)}
-              className={`flex-1 py-2.5 rounded-lg border text-sm font-medium transition
-                ${data.gender === value
-                  ? 'border-blue-500 bg-blue-50 text-blue-600'
-                  : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </Field>
-
-      {/* 생년월일 */}
-      <Field label="생년월일">
+    <div className="space-y-6">
+      <div className="flex items-end justify-center gap-3">
         <input
-          type="date"
-          value={data.birthDate}
-          onChange={(e) => update('birthDate', e.target.value)}
-          max={new Date().toISOString().split('T')[0]}
-          className={inputCls()}
+          type="number"
+          value={data.weight}
+          onChange={(e) => update('weight', e.target.value)}
+          placeholder="70"
+          min={20} max={300}
+          className="w-36 bg-transparent text-5xl font-bold text-blue-400 text-center border-b-2 border-blue-400/50 outline-none focus:border-blue-400 transition pb-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
         />
-      </Field>
+        <span className="text-white text-2xl font-medium mb-1">kg</span>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {chips.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => update('weight', v)}
+            className={`py-3 rounded-xl text-sm font-medium transition ${
+              data.weight === v
+                ? 'bg-blue-500/30 border border-blue-400 text-blue-300'
+                : 'bg-[#132236] border border-white/10 text-white hover:bg-white/10'
+            }`}
+          >
+            {v}kg
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
-      {/* 키 */}
-      <Field label="키 (cm)">
-        <div className="relative">
-          <input
-            type="number"
-            value={data.height}
-            onChange={(e) => update('height', e.target.value)}
-            placeholder="예) 175"
-            min={100} max={250}
-            className={inputCls()}
-          />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">cm</span>
-        </div>
-      </Field>
-
-      {/* 몸무게 */}
-      <Field label="몸무게 (kg)">
-        <div className="relative">
-          <input
-            type="number"
-            value={data.weight}
-            onChange={(e) => update('weight', e.target.value)}
-            placeholder="예) 72"
-            min={20} max={300}
-            className={inputCls()}
-          />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">kg</span>
-        </div>
-      </Field>
-
-      {/* 체지방률 */}
-      <Field label="체지방률 (%)">
+/* ─── Step 2: 인바디 ───────────────────────────────────── */
+function InbodyStep({ data, update }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm text-gray-400 mb-1.5">체지방률</label>
         <div className="relative">
           <input
             type="number"
             value={data.bodyFat}
             onChange={(e) => update('bodyFat', e.target.value)}
-            placeholder="예) 18"
+            placeholder="15"
             min={1} max={60} step={0.1}
-            className={inputCls()}
+            className="w-full px-4 py-3.5 rounded-xl bg-[#1A2B3C] border border-white/10 text-white text-sm placeholder:text-gray-500 outline-none focus:border-blue-500/60 transition pr-10"
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">%</span>
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
         </div>
-      </Field>
-
-      {/* 골격근량 */}
-      <Field label="골격근량 (kg)">
+      </div>
+      <div>
+        <label className="block text-sm text-gray-400 mb-1.5">골격근량</label>
         <div className="relative">
           <input
             type="number"
             value={data.skeletalMuscle}
             onChange={(e) => update('skeletalMuscle', e.target.value)}
-            placeholder="예) 34"
+            placeholder="30"
             min={5} max={100} step={0.1}
-            className={inputCls()}
+            className="w-full px-4 py-3.5 rounded-xl bg-[#1A2B3C] border border-white/10 text-white text-sm placeholder:text-gray-500 outline-none focus:border-blue-500/60 transition pr-10"
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">kg</span>
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm">kg</span>
         </div>
-      </Field>
+      </div>
 
-      <p className="text-xs text-gray-400 pt-1">
-        인바디 등 체성분 분석 결과가 있다면 입력해주세요.
-      </p>
+      {/* 안내 */}
+      <div className="bg-[#132236] border border-white/10 rounded-xl px-4 py-3 mt-2">
+        <p className="text-sm text-gray-300 font-medium mb-1">🔍 인바디 측정을 하지 않으셨나요?</p>
+        <p className="text-xs text-gray-500 leading-relaxed">
+          괜찮습니다! 건너뛰고 기본 정보만으로도<br />맞춤형 추천을 받으실 수 있습니다
+        </p>
+      </div>
     </div>
   )
 }
 
-/* ─── STEP 2: 라이프스타일 ────────────────────────────── */
-function LifestyleStep({ data, update, toggleFood }) {
+/* ─── Step 3: 기피 음식 ────────────────────────────────── */
+function AvoidFoodsStep({ data, update }) {
+  const toggle = (category) => {
+    const next = data.avoidFoods.includes(category)
+      ? data.avoidFoods.filter((c) => c !== category)
+      : [...data.avoidFoods, category]
+    update('avoidFoods', next)
+  }
+
   return (
-    <div className="space-y-6">
-
-      {/* 수면 시간 — range 슬라이더, 0.5시간 단위 */}
-      <Field label={`수면 시간 — ${data.sleepHours}시간`}>
-        <input
-          type="range"
-          min={4} max={12} step={0.5}
-          value={data.sleepHours}
-          onChange={(e) => update('sleepHours', parseFloat(e.target.value))}
-          className="w-full accent-blue-600"
-        />
-        <div className="flex justify-between text-xs text-gray-400 mt-1">
-          <span>4시간</span>
-          <span>12시간</span>
-        </div>
-      </Field>
-
-      {/* 음식 섭취 가능 시간 — 시작/종료 time picker */}
-      <Field label="음식 섭취 가능 시간">
-        <div className="flex items-center gap-2">
-          <input
-            type="time"
-            value={data.eatStart}
-            onChange={(e) => update('eatStart', e.target.value)}
-            className={`${inputCls()} flex-1`}
-          />
-          <span className="text-gray-400 text-sm shrink-0">부터</span>
-          <input
-            type="time"
-            value={data.eatEnd}
-            onChange={(e) => update('eatEnd', e.target.value)}
-            className={`${inputCls()} flex-1`}
-          />
-          <span className="text-gray-400 text-sm shrink-0">까지</span>
-        </div>
-      </Field>
-
-      {/* 운동 볼륨 — 단일 선택 버튼 그룹 */}
-      <Field label="주간 운동 볼륨">
-        <div className="grid grid-cols-2 gap-2">
-          {EXERCISE_VOLUMES.map((vol) => (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        {FOOD_CATEGORIES.map((category) => {
+          const selected = data.avoidFoods.includes(category)
+          return (
             <button
-              key={vol}
+              key={category}
               type="button"
-              onClick={() => update('exerciseVolume', vol)}
-              className={`py-2.5 px-3 rounded-lg border text-sm font-medium transition
-                ${data.exerciseVolume === vol
-                  ? 'border-blue-500 bg-blue-50 text-blue-600'
-                  : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}
+              onClick={() => toggle(category)}
+              className={`py-3.5 px-4 rounded-xl border text-sm font-medium text-left transition ${
+                selected
+                  ? 'border-red-400 bg-red-500/10 text-red-300'
+                  : 'border-white/10 bg-[#132236] text-white hover:border-white/20'
+              }`}
             >
-              {vol}
+              {selected && <span className="mr-1.5">✕</span>}
+              {category}
             </button>
-          ))}
-        </div>
-      </Field>
-
-      {/* 기피 음식 — 복수 선택 칩, 선택 시 빨간색 */}
-      <Field label="기피 음식 (복수 선택 가능)">
-        <div className="flex flex-wrap gap-2 mt-1">
-          {AVOID_FOODS.map((food) => (
-            <button
-              key={food}
-              type="button"
-              onClick={() => toggleFood(food)}
-              className={`px-3 py-1.5 rounded-full border text-xs font-medium transition
-                ${data.avoidFoods.includes(food)
-                  ? 'border-red-400 bg-red-50 text-red-500'
-                  : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}
-            >
-              {food}
-            </button>
-          ))}
-        </div>
-      </Field>
+          )
+        })}
+      </div>
+      <div className="bg-[#132236] border border-white/10 rounded-xl px-4 py-3 mt-2">
+        <p className="text-xs text-gray-500 leading-relaxed">
+          선택한 카테고리의 음식은 AI 식단 추천에서 제외됩니다.<br />
+          없으면 건너뛰기를 눌러주세요.
+        </p>
+      </div>
     </div>
   )
 }
 
-/* ─── STEP 3: 목표 선택 ───────────────────────────────── */
+/* ─── Step 4: 목표 ─────────────────────────────────────── */
 function GoalStep({ data, update }) {
   return (
     <div className="space-y-3">
       {GOALS.map((goal) => (
-        // 카드 전체가 클릭 가능한 라디오 역할
         <button
           key={goal.value}
           type="button"
           onClick={() => update('goal', goal.value)}
-          className={`w-full flex items-center gap-4 p-4 rounded-xl border text-left transition
-            ${data.goal === goal.value
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
+          className={`w-full flex items-center gap-4 p-4 rounded-xl border text-left transition ${
+            data.goal === goal.value
+              ? 'border-blue-400 bg-blue-500/10'
+              : 'border-white/10 bg-[#132236] hover:border-white/20'
+          }`}
         >
-          <span className="text-2xl">{goal.emoji}</span>
-          <div className="flex-1">
-            <p className={`text-sm font-semibold ${data.goal === goal.value ? 'text-blue-700' : 'text-gray-800'}`}>
-              {goal.label}
-            </p>
-            <p className="text-xs text-gray-500 mt-0.5">{goal.desc}</p>
+          <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-lg flex-shrink-0">
+            {goal.icon}
           </div>
-          {/* 선택 여부를 나타내는 원형 인디케이터 */}
-          <div className={`w-4 h-4 rounded-full border-2 transition shrink-0
-            ${data.goal === goal.value
-              ? 'border-blue-500 bg-blue-500'
-              : 'border-gray-300'}`}
-          />
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-sm font-semibold">{goal.label}</p>
+            <p className="text-gray-500 text-xs">{goal.sub}</p>
+            <p className="text-gray-400 text-xs mt-0.5">{goal.desc}</p>
+          </div>
         </button>
       ))}
     </div>
   )
-}
-
-/* ─── 공통 헬퍼 ───────────────────────────────────────── */
-
-// 라벨 + 인풋을 묶는 공통 래퍼
-function Field({ label, children }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">{label}</label>
-      {children}
-    </div>
-  )
-}
-
-// 공통 인풋 클래스
-function inputCls() {
-  return 'w-full px-4 py-2.5 rounded-lg border border-gray-300 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
 }
