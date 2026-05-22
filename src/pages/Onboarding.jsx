@@ -6,7 +6,8 @@ import * as goalService from '../services/goalService'
 const GOAL_TYPE_MAP = {
   lose_weight:  'diet',
   cutting:      'cutting',
-  dirty_bulkup: 'dirty_bulk',
+  dirty_bulkup: 'bulk',
+  dirty_bulk:   'dirty_bulk',
   lean_massup:  'lean_mass',
 }
 
@@ -21,10 +22,11 @@ const STEPS = [
 const FOOD_CATEGORIES = ['밥류', '국 및 탕류', '볶음류', '조림류', '구이류', '찌개 및 전골류', '찜류', '튀김류']
 
 const GOALS = [
-  { value: 'lose_weight',   icon: '↘', label: '체중 감량',     sub: '다이어트',  desc: '건강한 방법으로 체중을 줄이고 싶어요' },
-  { value: 'cutting',       icon: '✂', label: '체지방 감소',   sub: '컷팅',     desc: '근육은 유지하면서 체지방만 빼고 싶어요' },
-  { value: 'dirty_bulkup',  icon: '↗', label: '근육 증가',     sub: '벌크업',   desc: '체중과 근육량을 늘리고 싶어요' },
-  { value: 'lean_massup',   icon: '⚡', label: '체지방 최소화', sub: '린매스업', desc: '체지방은 최소화하면서 근육만 늘리고 싶어요' },
+  { value: 'lose_weight',  icon: '↘', bg: 'bg-blue-500/20',   label: '체중 감량',     sub: '다이어트',  desc: '건강한 방법으로 체중을 줄이고 싶어요' },
+  { value: 'cutting',      icon: '✂', bg: 'bg-red-500/20',    label: '체지방 감소',   sub: '컷팅',     desc: '근육은 유지하면서 체지방만 빼고 싶어요' },
+  { value: 'dirty_bulkup', icon: '↗', bg: 'bg-green-500/20',  label: '근육 증가',     sub: '벌크업',   desc: '체중과 근육량을 늘리고 싶어요' },
+  { value: 'dirty_bulk',   icon: '🔥', bg: 'bg-orange-500/20', label: '더티벌크업',    sub: '벌크업',   desc: '빠르게 체중과 근육량을 늘리고 싶어요' },
+  { value: 'lean_massup',  icon: '⚡', bg: 'bg-yellow-500/20', label: '체지방 최소화', sub: '린매스업', desc: '체지방은 최소화하면서 근육만 늘리고 싶어요' },
 ]
 
 export default function Onboarding() {
@@ -354,7 +356,7 @@ function GoalStep({ data, update }) {
               : 'border-white/10 bg-[#132236] hover:border-white/20'
           }`}
         >
-          <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-lg flex-shrink-0">
+          <div className={`w-10 h-10 rounded-xl ${goal.bg} flex items-center justify-center text-lg flex-shrink-0`}>
             {goal.icon}
           </div>
           <div className="flex-1 min-w-0">

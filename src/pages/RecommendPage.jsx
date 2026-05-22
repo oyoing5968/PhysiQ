@@ -117,8 +117,16 @@ export default function RecommendPage() {
     }
   }
 
+  const computeTargetCalories = (tdee, goal_type, fallback) => {
+    switch (goal_type) {
+      case 'bulk':       return tdee + 500
+      case 'dirty_bulk': return tdee + 800
+      default:           return fallback
+    }
+  }
+
   const tdee           = goalData?.tdee        ?? 0
-  const targetCalories = goalData?.daily_kcal  ?? 0
+  const targetCalories = computeTargetCalories(tdee, goalData?.goal_type, goalData?.daily_kcal ?? 0)
   const targetProtein  = goalData?.protein_g   ?? 0
   const targetCarbs    = goalData?.carb_g      ?? 0
   const targetFat      = goalData?.fat_g       ?? 0

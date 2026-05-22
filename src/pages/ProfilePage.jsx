@@ -5,13 +5,20 @@ import * as userService from '../services/userService'
 import * as goalService from '../services/goalService'
 
 const GOAL_LABEL = {
-  diet:       '다이어트',
+  bulk:       '벌크업',
+  dirty_bulk: '더티벌크업',
   cutting:    '컷팅',
-  dirty_bulk: '벌크업',
-  lean_mass:  '린매스업',
-  bulk:       '벌크',
+  lean_mass:  '린매스',
+  diet:       '다이어트',
   recomp:     '리컴프',
 }
+
+const GOAL_OPTIONS = [
+  { value: 'bulk',       label: '벌크업',     desc: 'TDEE + 500 kcal' },
+  { value: 'dirty_bulk', label: '더티벌크업', desc: 'TDEE + 800 kcal' },
+  { value: 'cutting',    label: '컷팅',       desc: 'TDEE - 300 kcal' },
+  { value: 'lean_mass',  label: '린매스',     desc: 'TDEE + 200 kcal' },
+]
 
 const SETTINGS_SECTIONS = [
   {
@@ -48,6 +55,9 @@ export default function ProfilePage() {
 
   const [userInfo, setUserInfo] = useState(null)
   const [goalData, setGoalData] = useState(null)
+  const [showGoalModal, setShowGoalModal] = useState(false)
+  const [selectedGoal, setSelectedGoal]   = useState(null)
+  const [goalUpdating, setGoalUpdating]   = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -72,6 +82,20 @@ export default function ProfilePage() {
   const handleLogout = () => {
     logout()
     navigate('/login', { replace: true })
+  }
+
+  const handleGoalUpdate = async () => {
+    if (!selectedGoal) return
+    setGoalUpdating(true)
+    try {
+      const res = await goalService.updateGoal(selectedGoal, goalData?.target_weight)
+      setGoalData(prev => ({ ...prev, ...res.data }))
+      setShowGoalModal(false)
+    } catch (e) {
+      alert(e.message || '목표 변경에 실패했습니다.')
+    } finally {
+      setGoalUpdating(false)
+    }
   }
 
   return (
@@ -139,7 +163,10 @@ export default function ProfilePage() {
             </div>
 
             {/* 현재 목표 */}
-            <button className="w-full bg-[#132236] border border-white/10 rounded-xl p-4 flex items-center gap-3 hover:bg-white/5 transition text-left">
+            <button
+              onClick={() => { setSelectedGoal(goalData?.goal_type); setShowGoalModal(true) }}
+              className="w-full bg-[#132236] border border-white/10 rounded-xl p-4 flex items-center gap-3 hover:bg-white/5 transition text-left"
+            >
               <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center text-xl flex-shrink-0">
                 🎯
               </div>
@@ -205,6 +232,63 @@ export default function ProfilePage() {
 
         </div>
       </div>
+
+      {/* 목표 변경 모달 */}
+      {showGoalModal && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-end justify-center"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowGoalModal(false) }}
+        >
+          <div className="bg-[#132236] border border-white/10 rounded-t-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-white font-bold text-base">목표 변경</h3>
+              <button
+                onClick={() => setShowGoalModal(false)}
+                className="text-gray-400 hover:text-white transition text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-2 mb-6">
+              {GOAL_OPTIONS.map((opt) => {
+                const isSelected = selectedGoal === opt.value
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setSelectedGoal(opt.value)}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition text-left ${
+                      isSelected
+                        ? 'bg-orange-500/20 border-orange-500/50'
+                        : 'bg-[#1A2B3C] border-white/10 hover:bg-white/5'
+                    }`}
+                  >
+                    <div>
+                      <p className={`text-sm font-semibold ${isSelected ? 'text-orange-400' : 'text-white'}`}>
+                        {opt.label}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">{opt.desc}</p>
+                    </div>
+                    {isSelected && (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="w-4 h-4 text-orange-400 flex-shrink-0">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            <button
+              onClick={handleGoalUpdate}
+              disabled={!selectedGoal || goalUpdating}
+              className="w-full bg-white text-[#0D1B2A] font-bold py-3 rounded-xl text-sm disabled:opacity-40 transition hover:bg-gray-100"
+            >
+              {goalUpdating ? '변경 중...' : '확인'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
