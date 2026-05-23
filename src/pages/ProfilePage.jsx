@@ -137,12 +137,6 @@ export default function ProfilePage() {
                 <p className="text-gray-400 text-sm">{userEmail}</p>
               </div>
 
-              {/* 배지 */}
-              <div className="flex items-center justify-center gap-2 mt-4">
-                <span className="flex items-center gap-1 bg-orange-500/20 text-orange-400 text-xs font-semibold px-3 py-1.5 rounded-full">
-                  🔥 7일 연속
-                </span>
-              </div>
             </div>
 
             {/* 신체 정보 그리드 */}
