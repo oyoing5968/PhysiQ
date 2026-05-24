@@ -12,8 +12,8 @@ PhysiQ는 사용자의 신장, 체중, 체지방률, 근육량, 활동량, 식�
 
 | 역할 | 이름 | 담당 |
 |------|------|------|
-| Frontend | 배인표 | React UI, 페이지 라우팅, API 연동 |
 | Backend | 이진영 | Express REST API 서버, 인증/비즈니스 로직 |
+| Frontend | 배인표 | React UI, 페이지 라우팅, API 연동 |
 | Database | 김하람 | ERD 설계, 스키마 정의, 데이터 수집/전처리 |
 | 인증/시각화·디자인 | 벌러르쳉군 | JWT 인증, 차트 시각화, Figma UI/UX |
 
